@@ -1,7 +1,7 @@
 # Quality & Traceability Platform (QTP)
 
 **Production Line Quality Control & Supplier Traceability**
-Kermit StreamSets Engineering Accelerator — Manufacturing | Syeda Eman Fatima (Member 3)
+Kermit StreamSets Engineering Accelerator — Manufacturing | Syeda Eman Fatima 
 
 ---
 
