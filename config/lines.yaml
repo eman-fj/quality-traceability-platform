@@ -1,0 +1,22 @@
+# Production lines for pipeline generation (used Day 4+ by `qtp pipelines generate`).
+inspections_topic: quality.inspections
+
+lines:
+  - id: line_1
+    partitions: "0"
+  - id: line_2
+    partitions: "1"
+  - id: line_3
+    partitions: "2"
+
+# Fragment plan (see docs/fragment-register.md for the full applicability matrix).
+fragments:
+  owned:
+    - dead_letter_queue_handler
+    - s3_partition_formatter
+  consumed:
+    - kafka_header_enricher
+    - data_quality_tagger
+    - schema_version_tagger
+    - audit_log_writer
+    - alert_notification_dispatcher

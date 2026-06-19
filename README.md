@@ -1,7 +1,7 @@
 # Quality & Traceability Platform (QTP)
 
 **Production Line Quality Control & Supplier Traceability**
-Kermit StreamSets Engineering Accelerator — Manufacturing | Syeda Eman Fatima (Member 3)
+Kermit StreamSets Engineering Accelerator — Manufacturing | Syeda Eman Fatima 
 
 ---
 
@@ -55,10 +55,36 @@ full diagram and [`diagrams/erd.md`](diagrams/erd.md) for the data model.
 
 ## Quickstart (60 seconds)
 
-> _TODO (Day 2): `docker-compose up` → all services healthy → run the inspection simulator._
+```bash
+# 1. (optional) override any clashing host ports / creds
+cp .env.example .env
 
+# 2. boot the whole environment (core + manufacturing specialist stack + simulator)
+docker compose up -d --build
+
+# 3. watch inspection events flow (CRITICAL defects injected on a timer)
+docker compose logs -f simulator
 ```
-# placeholder — to be completed when docker-compose lands
+
+| Service | URL / port | Login |
+|---------|-----------|-------|
+| Grafana | http://localhost:3000 | admin / admin |
+| MinIO console | http://localhost:9001 | minioadmin / minioadmin |
+| Mailhog UI | http://localhost:8025 | — |
+| WireMock admin | http://localhost:8080/__admin | — |
+| Prometheus | http://localhost:9090 | — |
+| Kafka | localhost:9092 | — |
+| Postgres (`quality`) | localhost:5432 | qtp / qtp_pw |
+| MySQL (`erp`) | localhost:3306 | qtp / qtp_pw |
+
+**What boots:** Kafka (+ 3 topics auto-created), Postgres (`quality` schema), MySQL ERP
+(suppliers + material_batches seeded), WireMock (classify + quarantine stubs), MinIO (4 buckets
+auto-created), Mailhog, Prometheus, Grafana, and the inspection simulator producing events for
+all three lines.
+
+```bash
+docker compose down        # stop
+docker compose down -v     # stop + wipe data volumes
 ```
 
 ## Runbooks
@@ -97,9 +123,9 @@ All ten shared fragments are used or explicitly accounted for — see the
 |-------------|-------|
 | Repo + skeleton | ✅ Day 1 |
 | Architecture diagram + ERD | ✅ Day 1 (draft) |
-| docker-compose.yml | ⬜ |
+| docker-compose.yml + simulator | ✅ Day 2 |
+| SDK package (`qtp` CLI) + 2 owned fragments | 🔄 Day 3 |
 | Pipelines (4) | ⬜ |
-| SDK package | ⬜ |
 | Compliance control tower | ⬜ |
 | Dashboards + reports | ⬜ |
 | Slide deck + LinkedIn | ⬜ |

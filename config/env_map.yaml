@@ -1,0 +1,18 @@
+# dev -> prod connection mapping (used Day 6 by `qtp pipelines promote`).
+# Connections follow the workspace convention: {industry}__{system}__{env}.
+# Credentials live in Control Hub as runtime parameters — never in these files.
+environments:
+  dev:
+    label: "env:dev"
+    connections:
+      kafka:    manufacturing__kafka__dev
+      postgres: manufacturing__postgres__dev
+      mysql:    manufacturing__mysql__dev
+      minio:    manufacturing__minio__dev
+  prod:
+    label: "env:prod"
+    connections:
+      kafka:    manufacturing__kafka__prod
+      postgres: manufacturing__postgres__prod
+      mysql:    manufacturing__mysql__prod
+      minio:    manufacturing__minio__prod

@@ -1,0 +1,20 @@
+[project]
+name = "qtp"
+version = "0.1.0"
+description = "Quality & Traceability Platform — StreamSets SDK automation for manufacturing quality control & supplier traceability"
+requires-python = ">=3.10"
+dependencies = [
+    "streamsets>=7.0,<8.0",
+    "python-dotenv>=1.0",
+    "PyYAML>=6.0",
+]
+
+[project.scripts]
+qtp = "qtp.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["qtp", "qtp.common", "qtp.fragments"]
