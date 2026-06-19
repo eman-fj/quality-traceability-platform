@@ -1,0 +1,17 @@
+# QTP Prometheus scrape config.
+# Scrapes Prometheus itself today; the StreamSets/SDC metrics job is a placeholder
+# to be pointed at the data collector's Prometheus endpoint once pipelines run.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Placeholder — enable once the StreamSets Data Collector exposes metrics.
+  # - job_name: streamsets
+  #   metrics_path: /metrics
+  #   static_configs:
+  #     - targets: ["host.docker.internal:18630"]

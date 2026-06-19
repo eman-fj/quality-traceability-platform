@@ -1,0 +1,221 @@
+# Quality & Traceability Platform (QTP) — local environment
+# Boots the entire manufacturing stack with a single command:
+#   docker compose up -d
+# Core stack: Kafka+Zookeeper, Postgres, MinIO, Mailhog, Prometheus, Grafana.
+# Specialist stack (manufacturing): MySQL (ERP), WireMock (classify + quarantine APIs).
+# Host ports can be overridden via a local .env file (see .env.example).
+
+name: qtp
+
+services:
+  # ---------------------------------------------------------------- Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: qtp-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [qtp]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: qtp-kafka
+    # On a quick teardown/restart, Zookeeper may still hold the previous broker's
+    # ephemeral registration node; retry until that stale node expires.
+    restart: on-failure
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"          # host access for the SDK / local tools
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # Two listeners: in-cluster (29092) and host (9092)
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:${KAFKA_PORT:-9092}
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "kafka-topics --bootstrap-server localhost:29092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    networks: [qtp]
+
+  # Creates the three quality topics, then exits.
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: qtp-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        set -e
+        for t in quality.inspections quality.defects.critical quality.defects.major; do
+          kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
+            --topic "$$t" --partitions 3 --replication-factor 1
+        done
+        echo "topics ready:"; kafka-topics --bootstrap-server kafka:29092 --list
+    networks: [qtp]
+
+  # ---------------------------------------------------------------- Postgres (quality warehouse)
+  postgres:
+    image: postgres:15
+    container_name: qtp-postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-qtp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qtp_pw}
+      POSTGRES_DB: ${POSTGRES_DB:-quality}
+    volumes:
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - qtp-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-qtp} -d ${POSTGRES_DB:-quality}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [qtp]
+
+  # ---------------------------------------------------------------- MySQL (ERP)
+  mysql:
+    image: mysql:8.0
+    container_name: qtp-mysql
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pw}
+      MYSQL_DATABASE: ${MYSQL_DB:-erp}
+      MYSQL_USER: ${MYSQL_USER:-qtp}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-qtp_pw}
+    volumes:
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - qtp-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-root_pw}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: [qtp]
+
+  # ---------------------------------------------------------------- WireMock (defect classify + quarantine)
+  wiremock:
+    image: wiremock/wiremock:3.3.1
+    container_name: qtp-wiremock
+    ports:
+      - "${WIREMOCK_PORT:-8080}:8080"
+    command: ["--global-response-templating", "--disable-banner"]
+    volumes:
+      - ./docker/wiremock/mappings:/home/wiremock/mappings:ro
+    networks: [qtp]
+
+  # ---------------------------------------------------------------- MinIO (object storage)
+  minio:
+    image: minio/minio
+    container_name: qtp-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - qtp-minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [qtp]
+
+  # Creates the four quality buckets, then exits.
+  minio-init:
+    image: minio/mc
+    container_name: qtp-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb -p local/kermit-quality-conforming local/kermit-quality-defects \
+              local/kermit-shift-reports local/kermit-error-dlq
+        echo "buckets ready:"; mc ls local
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    networks: [qtp]
+
+  # ---------------------------------------------------------------- Mailhog (mock SMTP)
+  mailhog:
+    image: mailhog/mailhog
+    container_name: qtp-mailhog
+    ports:
+      - "${MAILHOG_SMTP_PORT:-1025}:1025"   # SMTP in
+      - "${MAILHOG_UI_PORT:-8025}:8025"     # web UI
+    networks: [qtp]
+
+  # ---------------------------------------------------------------- Prometheus + Grafana
+  prometheus:
+    image: prom/prometheus
+    container_name: qtp-prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks: [qtp]
+
+  grafana:
+    image: grafana/grafana
+    container_name: qtp-grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - qtp-grafana-data:/var/lib/grafana
+    networks: [qtp]
+
+  # ---------------------------------------------------------------- Inspection event simulator
+  simulator:
+    build: ./simulator
+    container_name: qtp-simulator
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      LINES: ${SIM_LINES:-line_1,line_2,line_3}
+      EVENTS_PER_SEC_PER_LINE: ${SIM_RATE:-1}
+      DEFECT_RATE: ${SIM_DEFECT_RATE:-0.08}        # ~8% of parts carry a defect
+      CRITICAL_EVERY_SECONDS: ${SIM_CRITICAL_EVERY:-45}  # force a CRITICAL for demo visibility
+    restart: unless-stopped
+    networks: [qtp]
+
+volumes:
+  qtp-postgres-data:
+  qtp-mysql-data:
+  qtp-minio-data:
+  qtp-grafana-data:
+
+networks:
+  qtp:
+    driver: bridge

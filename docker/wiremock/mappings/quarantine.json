@@ -1,0 +1,21 @@
+{
+  "mappings": [
+    {
+      "request": {
+        "method": "PUT",
+        "urlPath": "/quarantine/register"
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "quarantine_id": "QAR-{{randomValue length=8 type='ALPHANUMERIC' uppercase=true}}",
+          "status": "REGISTERED",
+          "registered_at": "{{now format='yyyy-MM-dd HH:mm:ss'}}"
+        },
+        "fixedDelayMilliseconds": 150,
+        "transformers": ["response-template"]
+      }
+    }
+  ]
+}
