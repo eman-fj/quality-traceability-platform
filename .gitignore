@@ -8,6 +8,10 @@ venv/
 .env
 *.local
 
+# TLS material for MinIO (regenerate locally via scripts/gen-minio-cert.sh)
+certs/private.key
+certs/public.crt
+
 # OS
 .DS_Store
 Thumbs.db

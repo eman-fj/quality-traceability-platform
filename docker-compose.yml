@@ -134,8 +134,13 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
       - qtp-minio-data:/data
+      # TLS: SDC's AWS SDK v2.30+ refuses streaming uploads to plain-HTTP S3 endpoints
+      # ("Content hash must be present in 'x-amz-content-sha256'"). MinIO auto-serves
+      # HTTPS when it finds public.crt/private.key here. The SDC JVM must trust this
+      # cert once (see README / setup docs). Cert SANs include 'minio'.
+      - ./certs:/root/.minio/certs:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-fk", "https://localhost:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -151,10 +156,10 @@ services:
     entrypoint: ["sh", "-c"]
     command:
       - |
-        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
-        mc mb -p local/kermit-quality-conforming local/kermit-quality-defects \
+        mc alias set --insecure local https://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --insecure -p local/kermit-quality-conforming local/kermit-quality-defects \
               local/kermit-shift-reports local/kermit-error-dlq
-        echo "buckets ready:"; mc ls local
+        echo "buckets ready:"; mc ls --insecure local
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}

@@ -5,10 +5,15 @@ CREATE SCHEMA IF NOT EXISTS quality;
 SET search_path TO quality;
 
 -- Parts that passed inspection (clean path).
+-- inspection_timestamp is stored as TEXT (canonical ISO-8601 from the inspection
+-- station, e.g. 2026-06-19T07:24:54.676771+00:00). The StreamSets JDBC Producer
+-- coerces strings to TIMESTAMP client-side via Timestamp.valueOf, which rejects the
+-- ISO 'T'/offset/microsecond form; storing the canonical string and casting in queries
+-- (inspection_timestamp::timestamptz) is lossless and avoids that coercion.
 CREATE TABLE conforming_parts (
     part_id              TEXT PRIMARY KEY,
     line_id              TEXT NOT NULL,
-    inspection_timestamp TIMESTAMPTZ NOT NULL,
+    inspection_timestamp TEXT NOT NULL,
     material_batch_id    TEXT,
     operator_id          TEXT,
     shift                TEXT,
@@ -21,7 +26,7 @@ CREATE TABLE conforming_parts (
 CREATE TABLE defective_parts (
     part_id                  TEXT PRIMARY KEY,
     line_id                  TEXT NOT NULL,
-    inspection_timestamp     TIMESTAMPTZ NOT NULL,
+    inspection_timestamp     TEXT NOT NULL,  -- ISO-8601 string; cast to timestamptz in SLA queries
     material_batch_id        TEXT,
     operator_id              TEXT,
     shift                    TEXT,
