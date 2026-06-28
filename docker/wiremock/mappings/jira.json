@@ -1,0 +1,21 @@
+{
+  "mappings": [
+    {
+      "request": {
+        "method": "POST",
+        "urlPath": "/jira/issue"
+      },
+      "response": {
+        "status": 201,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "id": "{{randomValue length=5 type='NUMERIC'}}",
+          "key": "QUAL-{{randomValue length=4 type='NUMERIC'}}",
+          "self": "http://wiremock:8080/jira/issue/QUAL"
+        },
+        "fixedDelayMilliseconds": 20,
+        "transformers": ["response-template"]
+      }
+    }
+  ]
+}

@@ -180,12 +180,24 @@ def make_planned(group: str, action: str, day: str):
 _PLANNED = [
     ("jobs", ["status", "start", "stop"], "6"),
     ("preflight", ["run"], "7"),
-    ("sla", ["check"], "7"),
     ("report", ["shift"], "8"),
     ("evidence", ["pack"], "8"),
     ("demo", ["run"], "8"),
     ("teardown", ["run"], "9"),
 ]
+
+
+# --------------------------------------------------------------------------- sla
+def cmd_sla_check(args) -> int:
+    from .sla.traceability_checker import check_part
+
+    return check_part(args.part)
+
+
+def cmd_sla_scan(args) -> int:
+    from .sla.traceability_checker import scan
+
+    return scan(args.max_alerts)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -237,6 +249,16 @@ def build_parser() -> argparse.ArgumentParser:
     for action, day in [("generate", "4-6"), ("add-line", "6"), ("promote", "6"), ("deploy", "6")]:
         act = p_actions.add_parser(action, help=f"(planned, Day {day})")
         act.set_defaults(func=make_planned("pipelines", action, day))
+
+    # sla (implemented) — 2-hour ISO 9001 traceability compliance
+    sla = groups.add_parser("sla", help="Traceability 2-hour SLA enforcement (ISO 9001)")
+    sla_actions = sla.add_subparsers(dest="action", required=True, metavar="<action>")
+    s_check = sla_actions.add_parser("check", help="full traceability + SLA report for one part")
+    s_check.add_argument("--part", required=True, help="part_id to check")
+    s_check.set_defaults(func=cmd_sla_check)
+    s_scan = sla_actions.add_parser("scan", help="poll for SLA breaches and raise alerts")
+    s_scan.add_argument("--max-alerts", type=int, default=10, help="cap alerts per scan (default 10)")
+    s_scan.set_defaults(func=cmd_sla_scan)
 
     # planned groups (declared for the full command tree)
     for group, actions, day in _PLANNED:

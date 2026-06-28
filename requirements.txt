@@ -2,3 +2,6 @@
 streamsets>=7.0,<8.0
 python-dotenv>=1.0
 PyYAML>=6.0
+# SDK compliance/reporting scripts (traceability_checker, shift_quality_report)
+psycopg2-binary>=2.9
+requests>=2.28
