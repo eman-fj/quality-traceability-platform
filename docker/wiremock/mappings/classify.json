@@ -5,13 +5,13 @@
       "request": {
         "method": "POST",
         "urlPath": "/defects/classify",
-        "bodyPatterns": [ { "matches": ".*(SUR-001|MAT-001).*" } ]
+        "bodyPatterns": [ { "matches": "(?s).*(SUR-001|MAT-001).*" } ]
       },
       "response": {
         "status": 200,
         "headers": { "Content-Type": "application/json" },
         "jsonBody": { "defect_category": "CRITICAL", "recommended_action": "SCRAP" },
-        "fixedDelayMilliseconds": 120
+        "fixedDelayMilliseconds": 10
       }
     },
     {
@@ -19,13 +19,13 @@
       "request": {
         "method": "POST",
         "urlPath": "/defects/classify",
-        "bodyPatterns": [ { "matches": ".*(DIM-001|DIM-002|MAT-002).*" } ]
+        "bodyPatterns": [ { "matches": "(?s).*(DIM-001|DIM-002|MAT-002).*" } ]
       },
       "response": {
         "status": 200,
         "headers": { "Content-Type": "application/json" },
         "jsonBody": { "defect_category": "MAJOR", "recommended_action": "REWORK" },
-        "fixedDelayMilliseconds": 90
+        "fixedDelayMilliseconds": 10
       }
     },
     {
@@ -33,13 +33,13 @@
       "request": {
         "method": "POST",
         "urlPath": "/defects/classify",
-        "bodyPatterns": [ { "matches": ".*(SUR-002|ASS-001).*" } ]
+        "bodyPatterns": [ { "matches": "(?s).*(SUR-002|ASS-001).*" } ]
       },
       "response": {
         "status": 200,
         "headers": { "Content-Type": "application/json" },
         "jsonBody": { "defect_category": "MINOR", "recommended_action": "HOLD" },
-        "fixedDelayMilliseconds": 60
+        "fixedDelayMilliseconds": 10
       }
     },
     {
@@ -49,7 +49,7 @@
         "status": 200,
         "headers": { "Content-Type": "application/json" },
         "jsonBody": { "defect_category": "MINOR", "recommended_action": "HOLD" },
-        "fixedDelayMilliseconds": 60
+        "fixedDelayMilliseconds": 10
       }
     }
   ]

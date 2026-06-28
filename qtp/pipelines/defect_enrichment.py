@@ -11,17 +11,21 @@ and write to the defective-parts warehouse. Feeds from the quality_ingest defect
         -> HTTP Client classify     (POST /defects/classify → defect_category, recommended_action)
         -> Expression Evaluator     (lift classify response fields onto record root)
         -> [fan-out]
-             alert lane  : alert_notification_dispatcher (CRITICAL only, precondition)
-             quarantine  : HTTP Client (PUT /quarantine/register; retry×3)
+             main spine : HTTP Client quarantine (PUT /quarantine/register)
                                -> Expression Evaluator (quarantine_id + traceability_completed_at)
-                                   -> JDBC Producer (Postgres quality.defective_parts)
+                                   -> Field Remover (drop non-column fields)
+                                       -> JDBC Producer (Postgres quality.defective_parts)
+             alert branch : Stream Selector (defect_category == 'CRITICAL')
+                               lane 0 CRITICAL -> alert_notification_dispatcher
+                               lane 1 default  -> Trash
     Error records -> Amazon S3 (MinIO kermit-error-dlq)
-    Pipeline stop -> audit_log_writer fragment (quality.pipeline_audit)
+    Pipeline stop -> audit_log_writer fragment (quality.pipeline_audit)  [pending lifecycle label]
 
-Fan-out semantics: after classify_ee, both alert_frag and quarantine receive all records.
-alert_frag has a precondition `${record:value('/defect_category') == 'CRITICAL'}` and
-stage_on_record_error=DISCARD, so non-CRITICAL records are silently dropped in that branch.
-All records continue through the quarantine → JDBC chain on the main branch.
+Fan-out semantics: classify_ee has a single output lane, so `>>`-ing it to both the
+quarantine chain and the alert Stream Selector broadcasts every record to both. The main
+spine quarantines and writes EVERY defect; the alert branch only raises a notification for
+CRITICAL ones (a precondition can't be set on a fragment-instance wrapper via the SDK, so a
+Stream Selector + Trash does the severity filtering instead).
 
 JDBC Lookup assumes the MySQL driver (mariadb or mysql) is installed in the SDC.
 WireMock endpoints are internal network hostnames (wiremock:8080).
@@ -77,14 +81,19 @@ def build(sch, engine_id, name=None):
 
     # --- Classify API: POST defect codes → category + recommended action -------------
     # The whole record is sent as JSON; WireMock stubs match on defect code substrings.
-    classify = builder.add_stage("HTTP Client")
+    # type="processor": there is also an "HTTP Client" *destination* (fire-and-forget);
+    # we need the processor that issues the request and writes the response back onto
+    # the record (output_field), so classify_response is available downstream.
+    classify = builder.add_stage("HTTP Client", type="processor")
     set_config(
         classify,
         resource_url="${CLASSIFY_URL}",
         http_method="POST",
         data_format="JSON",
         output_field="/classify_response",
-        default_request_content_type="application/json",
+        # The processor sends nothing by default; request_data is the request body. Send the
+        # whole record as JSON so the classify API can match on the defect codes it contains.
+        request_data="${record:value('/')}",
     )
 
     # Lift classify response fields onto the record root (for JDBC column mapping).
@@ -99,24 +108,49 @@ def build(sch, engine_id, name=None):
         "expression_processor_configs",
     )
 
-    # --- CRITICAL alert fan-out (teammate fragment; non-CRITICAL silently discarded) -
+    # --- CRITICAL alert branch -------------------------------------------------------
+    # A precondition can't be set on a fragment-instance wrapper via the SDK, so severity
+    # filtering is done with a dedicated Stream Selector: it routes CRITICAL defects to
+    # the alert_notification_dispatcher fragment and everything else to Trash. This branch
+    # is fanned out from classify_ee (a single-output stage → broadcast), so the main
+    # quarantine chain below still processes every record.
+    alert_selector = builder.add_stage("Stream Selector")
+    # Predicates DEFINE the lanes and must be set before wiring:
+    #   lane 0 -> CRITICAL defects (alert); lane 1 -> default (no alert).
+    alert_selector.predicates = ["${record:value('/defect_category') == 'CRITICAL'}", "default"]
+
+    # Shape fields for the teammate's shared alert_notification_dispatcher fragment.
+    # That fragment parameterizes the id/metric/id-out-key field names but reads severity
+    # and timestamp from FIXED field names, so map our defect fields onto /severity and
+    # /timestamp here. (id/metric are pointed at existing fields via the ID_FIELD /
+    # METRIC_FIELD params below — no copy needed.)
+    alert_shaper = builder.add_stage("Expression Evaluator")
+    set_first(
+        alert_shaper,
+        [
+            {"fieldToSet": "/severity", "expression": "${record:value('/defect_category')}"},
+            {"fieldToSet": "/timestamp", "expression": "${record:value('/inspection_timestamp')}"},
+        ],
+        "field_expressions",
+        "expression_processor_configs",
+    )
+
+    # Reuse the team's shared alert dispatcher (cross-team fragment reuse).
     alert_frag_obj = sch.pipelines.get(name="alert_notification_dispatcher", fragment=True)
     alert_frag = builder.add_fragment(alert_frag_obj)
-    alert_frag.stage_record_preconditions = ["${record:value('/defect_category') == 'CRITICAL'}"]
-    alert_frag.stage_on_record_error = "DISCARD"
 
-    # --- Quarantine API: PUT /quarantine/register (all defects, retry on transient err)
-    quarantine = builder.add_stage("HTTP Client")
+    # Non-CRITICAL defects need no alert; Trash terminates that lane cleanly.
+    alert_trash = builder.add_stage("Trash")
+
+    # --- Quarantine API: PUT /quarantine/register (all defects) -----------------------
+    quarantine = builder.add_stage("HTTP Client", type="processor")
     set_config(
         quarantine,
         resource_url="${QUARANTINE_URL}",
         http_method="PUT",
         data_format="JSON",
         output_field="/quarantine_response",
-        default_request_content_type="application/json",
-        # Retry configuration attribute names vary by SDC version; set_config warns + skips unknowns.
-        num_retries=3,
-        wait_time_before_retry=1000,
+        request_data="${record:value('/')}",  # send the record as the request body
     )
 
     # Lift quarantine_id + stamp traceability_completed_at (ISO 9001 + 2-hour SLA anchor).
@@ -130,6 +164,25 @@ def build(sch, engine_id, name=None):
         "field_expressions",
         "expression_processor_configs",
     )
+
+    # --- Strip fields defective_parts can't take (same lesson as quality_ingest) ------
+    # Removed: the enrichment scratch fields (dq_*), the raw API response objects, the
+    # nested measurements object, and defect_codes (a LIST → the JDBC Producer can't
+    # coerce a list into the JSONB column). What remains maps 1:1 to defective_parts:
+    # part_id, line_id, inspection_timestamp, material_batch_id, operator_id, shift,
+    # schema_version, supplier_id, supplier_name, material_grade, certificate_url,
+    # defect_category, recommended_action, quarantine_id, traceability_completed_at.
+    # (Raw defect_codes can be re-added later via a list→JSON-string conversion.)
+    field_remover = builder.add_stage("Field Remover")
+    set_first(
+        field_remover,
+        [
+            "/measurements", "/dq_score", "/dq_status", "/dq_checked_at",
+            "/classify_response", "/quarantine_response", "/defect_codes",
+        ],
+        "fields",
+    )
+    set_config(field_remover, action="REMOVE")
 
     # --- Destination: fully-enriched defect record → Postgres defective_parts --------
     defect_out = builder.add_stage("JDBC Producer")
@@ -171,30 +224,46 @@ def build(sch, engine_id, name=None):
 
     # --- Wire ------------------------------------------------------------------
     # Chain: origin → enrichers → ERP lookup → classify → classify_ee
+    #        → quarantine → quarantine_ee → defective_parts
     stage = origin
     for enricher in enrichers:
         stage = stage >> enricher
     stage = stage >> erp_lookup >> classify >> classify_ee
-
-    # Fan-out from classify_ee:
-    #   branch 1 (alert)     → alert_notification_dispatcher [terminates; CRITICAL only via precondition]
-    #   branch 2 (quarantine chain) → quarantine → quarantine_ee → defect_out
-    classify_ee >> alert_frag
-    classify_ee >> quarantine
-    quarantine >> quarantine_ee >> defect_out
+    # Main spine: every defect is quarantined, enriched, and written to defective_parts.
+    classify_ee >> quarantine >> quarantine_ee >> field_remover >> defect_out
+    # Fan-out: severity-routed alerting in parallel (broadcast — same records).
+    classify_ee >> alert_selector
+    alert_selector >> alert_shaper >> alert_frag   # lane 0: CRITICAL -> shape -> dispatcher
+    alert_selector >> alert_trash                  # lane 1: default  -> Trash (no alert)
 
     pipeline = builder.build(name or PIPELINE_NAME, description=__doc__.split("\n")[0], labels=LABELS)
     try:
         pipeline.configuration["errorRecordPolicy"] = "STAGE_RECORD"
     except Exception as exc:  # noqa: BLE001
         log.warning("Could not set errorRecordPolicy (%s); using engine default.", exc)
-    pipeline.parameters = {
+    # NOTE: .update() (merge), not assignment. add_fragment() promotes the alert fragment's
+    # declared parameters into the pipeline under a prefix and rewrites the fragment's
+    # script/URL references to match; replacing pipeline.parameters wholesale would wipe
+    # those promoted params and leave ${alert_01_ID_FIELD} unresolved. Merging preserves
+    # them, and we override the oil&gas defaults with our manufacturing fields below.
+    #
+    # The prefix is the SDK default: first 5 chars of the fragment name + instance number,
+    # i.e. "alert_" + "01_" = "alert_01_" for alert_notification_dispatcher's first instance.
+    pipeline.parameters.update({
         "KAFKA_BROKER":    "kafka:29092",
         "MYSQL_JDBC_URL":  "jdbc:mysql://mysql:3306/erp",
         "MYSQL_USER":      "qtp",
         "MYSQL_PASSWORD":  "qtp_pw",
         "CLASSIFY_URL":    "http://wiremock:8080/defects/classify",
         "QUARANTINE_URL":  "http://wiremock:8080/quarantine/register",
+        # Alert fragment params (prefixed). id/metric/id-out-key drive the JS payload;
+        # severity/timestamp come from the alert_shaper EE (fixed field names).
+        "alert_01_ID_FIELD":            "part_id",
+        "alert_01_METRIC_FIELD":        "defect_category",
+        "alert_01_ID_OUT_KEY":          "part_id",
+        "alert_01_MAINTENANCE_API_URL": "http://wiremock:8080/alerts",
+        # Unprefixed fallback in case the URL ref wasn't a declared fragment param.
+        "MAINTENANCE_API_URL":          "http://wiremock:8080/alerts",
         "PG_JDBC_URL":     "jdbc:postgresql://postgres:5432/quality",
         "PG_USER":         "qtp",
         "PG_PASSWORD":     "qtp_pw",
@@ -208,5 +277,5 @@ def build(sch, engine_id, name=None):
         "SOURCE_SYSTEM":   "manufacturing",
         "ENVIRONMENT":     "dev",
         "SCHEMA_VERSION":  "1",
-    }
+    })
     return pipeline

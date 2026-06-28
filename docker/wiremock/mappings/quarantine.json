@@ -13,7 +13,7 @@
           "status": "REGISTERED",
           "registered_at": "{{now format='yyyy-MM-dd HH:mm:ss'}}"
         },
-        "fixedDelayMilliseconds": 150,
+        "fixedDelayMilliseconds": 10,
         "transformers": ["response-template"]
       }
     }

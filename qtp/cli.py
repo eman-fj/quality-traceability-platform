@@ -89,7 +89,9 @@ def cmd_pipelines_build(args) -> int:
         new_def["title"] = target._pipeline_definition.get("title", full_name)
         target._pipeline_definition = new_def
         try:
-            target.parameters = new_pipeline.parameters
+            # The parameters setter calls .copy() on its argument, so pass a plain dict
+            # (new_pipeline.parameters is a PipelineParameters Mapping, which has no .copy()).
+            target.parameters = dict(new_pipeline.parameters)
         except Exception as exc:  # noqa: BLE001
             log.warning("Could not copy parameters onto existing pipeline (%s).", exc)
         sch.publish_pipeline(target, commit_message=message or f"qtp: update {full_name}")

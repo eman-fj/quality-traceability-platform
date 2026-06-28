@@ -1,0 +1,21 @@
+{
+  "mappings": [
+    {
+      "request": {
+        "method": "POST",
+        "urlPath": "/alerts"
+      },
+      "response": {
+        "status": 202,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "alert_id": "ALERT-{{randomValue length=8 type='ALPHANUMERIC' uppercase=true}}",
+          "status": "ACCEPTED",
+          "received_at": "{{now format='yyyy-MM-dd HH:mm:ss'}}"
+        },
+        "fixedDelayMilliseconds": 80,
+        "transformers": ["response-template"]
+      }
+    }
+  ]
+}
