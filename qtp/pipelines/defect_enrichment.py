@@ -251,7 +251,7 @@ def build(sch, engine_id, name=None):
     # i.e. "alert_" + "01_" = "alert_01_" for alert_notification_dispatcher's first instance.
     pipeline.parameters.update({
         "KAFKA_BROKER":    "kafka:29092",
-        "MYSQL_JDBC_URL":  "jdbc:mysql://mysql:3306/erp",
+        "MYSQL_JDBC_URL":  "jdbc:mysql://mysql:3306/erp?useUnicode=true&characterEncoding=UTF-8",
         "MYSQL_USER":      "qtp",
         "MYSQL_PASSWORD":  "qtp_pw",
         "CLASSIFY_URL":    "http://wiremock:8080/defects/classify",

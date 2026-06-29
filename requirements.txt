@@ -5,3 +5,6 @@ PyYAML>=6.0
 # SDK compliance/reporting scripts (traceability_checker, shift_quality_report)
 psycopg2-binary>=2.9
 requests>=2.28
+PyMySQL>=1.1
+openpyxl>=3.1
+boto3>=1.34

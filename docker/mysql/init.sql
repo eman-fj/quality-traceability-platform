@@ -2,8 +2,12 @@
 -- Holds supplier + material-batch traceability data the defect path joins against.
 -- Batch IDs below MUST match the set the inspection_simulator emits.
 
-CREATE DATABASE IF NOT EXISTS erp;
+CREATE DATABASE IF NOT EXISTS erp CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE erp;
+
+-- This file is UTF-8; tell the client so accented supplier names (Précision, OÜ)
+-- aren't double-encoded into mojibake on load.
+SET NAMES utf8mb4;
 
 CREATE TABLE suppliers (
     supplier_id          VARCHAR(16) PRIMARY KEY,

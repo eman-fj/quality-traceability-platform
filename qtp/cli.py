@@ -180,7 +180,6 @@ def make_planned(group: str, action: str, day: str):
 _PLANNED = [
     ("jobs", ["status", "start", "stop"], "6"),
     ("preflight", ["run"], "7"),
-    ("report", ["shift"], "8"),
     ("evidence", ["pack"], "8"),
     ("demo", ["run"], "8"),
     ("teardown", ["run"], "9"),
@@ -198,6 +197,13 @@ def cmd_sla_scan(args) -> int:
     from .sla.traceability_checker import scan
 
     return scan(args.max_alerts)
+
+
+# ------------------------------------------------------------------------ report
+def cmd_report_shift(args) -> int:
+    from .report.shift_quality_report import generate
+
+    return generate(args.shift, args.date, args.email)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -259,6 +265,16 @@ def build_parser() -> argparse.ArgumentParser:
     s_scan = sla_actions.add_parser("scan", help="poll for SLA breaches and raise alerts")
     s_scan.add_argument("--max-alerts", type=int, default=10, help="cap alerts per scan (default 10)")
     s_scan.set_defaults(func=cmd_sla_scan)
+
+    # report (implemented) — end-of-shift quality report
+    import datetime as _dt
+    report = groups.add_parser("report", help="Operational quality reports")
+    report_actions = report.add_subparsers(dest="action", required=True, metavar="<action>")
+    r_shift = report_actions.add_parser("shift", help="end-of-shift quality report (Excel -> MinIO + Mailhog)")
+    r_shift.add_argument("--shift", required=True, choices=["A", "B", "C"], help="production shift")
+    r_shift.add_argument("--date", default=_dt.date.today().isoformat(), help="YYYY-MM-DD (default: today)")
+    r_shift.add_argument("--email", default="quality.manager@kermit.local", help="quality manager email")
+    r_shift.set_defaults(func=cmd_report_shift)
 
     # planned groups (declared for the full command tree)
     for group, actions, day in _PLANNED:

@@ -34,18 +34,32 @@ INLINE_FRAGMENTS = ["kafka_header_enricher", "data_quality_tagger", "schema_vers
 log = get_logger()
 
 
-def build(sch, engine_id, name=None):
+def build(sch, engine_id, name=None, line_id=None):
+    """Build the quality-ingestion pipeline.
+
+    line_id=None builds the all-lines pipeline (default). When a line_id is given (by
+    quality_pipeline_manager during per-line generation) the pipeline is named/grouped
+    per line and an origin precondition keeps only that line's records, so each
+    production line gets its own dedicated, independently-scalable pipeline.
+    """
     builder = sch.get_pipeline_builder(engine_type="data_collector", engine_id=engine_id)
+    group = "qtp-quality-ingest" + (f"-{line_id}" if line_id else "")
 
     # --- Origin: read inspection events from Kafka -----------------------------------
     origin = builder.add_stage("Kafka Multitopic Consumer")
     set_config(
         origin,
         topic_list=["quality.inspections"],
-        consumer_group="qtp-quality-ingest",
+        consumer_group=group,
         data_format="JSON",
         broker_uri="${KAFKA_BROKER}",
     )
+    if line_id:
+        # Dedicated per-line pipeline: keep only this line's inspection events.
+        try:
+            origin.stage_record_preconditions = [f"${{record:value('/line_id') == '{line_id}'}}"]
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Could not set per-line precondition on origin (%s).", exc)
 
     # --- Stage A: inline enrichment — pull published shared fragments and chain them -
     enrichers = []
@@ -136,7 +150,9 @@ def build(sch, engine_id, name=None):
     selector >> field_remover           # lane 1: clean   -> strip non-column fields
     field_remover >> clean_out          #                 -> JDBC Producer (conforming_parts)
 
-    pipeline = builder.build(name or PIPELINE_NAME, description=__doc__.split("\n")[0], labels=LABELS)
+    full_name = name or (PIPELINE_NAME + (f"__{line_id}" if line_id else ""))
+    labels = LABELS + ([f"line:{line_id}"] if line_id else [])
+    pipeline = builder.build(full_name, description=__doc__.split("\n")[0], labels=labels)
 
     # Capture the record as it looked at the failing stage (post-enrichment), not the
     # raw origin record — so DQ scores, schema version, and header attrs are preserved
