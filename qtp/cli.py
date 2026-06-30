@@ -200,13 +200,82 @@ def make_planned(group: str, action: str, day: str):
     return _handler
 
 
-_PLANNED = [
-    ("jobs", ["status", "start", "stop"], "6"),
-    ("preflight", ["run"], "7"),
-    ("evidence", ["pack"], "8"),
-    ("demo", ["run"], "8"),
-    ("teardown", ["run"], "9"),
-]
+_PLANNED = []  # all command groups are now implemented
+
+
+# ----------------------------------------------------------------------- jobs
+def cmd_jobs_status(args) -> int:
+    from .jobs.job_manager import status
+
+    return status(args.flow)
+
+
+def cmd_jobs_create(args) -> int:
+    from .jobs.job_manager import create
+
+    return create(args.flow, start=args.start, wait=args.wait)
+
+
+def cmd_jobs_start(args) -> int:
+    from .jobs.job_manager import start
+
+    return start(args.flow, wait=args.wait, create_missing=not args.no_create)
+
+
+def cmd_jobs_stop(args) -> int:
+    from .jobs.job_manager import stop
+
+    return stop(args.flow, force=args.force)
+
+
+# ------------------------------------------------------------------- teardown
+def cmd_teardown_run(args) -> int:
+    from .demo.teardown import run
+
+    return run(stop_jobs=args.stop_jobs, clear_journal=args.clear_journal)
+
+
+# ------------------------------------------------------------------------- demo
+def cmd_demo_run(args) -> int:
+    from .demo.runner import run
+
+    return run(seed_data=not args.no_seed, reset=not args.no_reset, shift=args.shift,
+               date=args.date, email=args.email, inject=args.inject_critical,
+               jobs=args.start_jobs, keep_journal=args.keep_journal,
+               evidence_dir=args.evidence_dir, skip=args.skip)
+
+
+def cmd_demo_seed(args) -> int:
+    from .demo.seed import run
+
+    return run(reset=not args.no_reset)
+
+
+# -------------------------------------------------------------------- preflight
+def cmd_preflight_run(args) -> int:
+    from .demo.preflight import run
+
+    return run()
+
+
+# --------------------------------------------------------------------- evidence
+def cmd_evidence_pack(args) -> int:
+    from .demo.evidence import pack
+
+    return pack(args.part, args.out)
+
+
+# --------------------------------------------------------------------- schedule
+def cmd_schedule_run(args) -> int:
+    from .demo.schedule import run
+
+    return run(args.monitor_interval, args.sla_interval, once=args.once)
+
+
+def cmd_schedule_install(args) -> int:
+    from .demo.schedule import install
+
+    return install(args.dir, args.monitor_interval, args.sla_interval)
 
 
 # --------------------------------------------------------------------------- sla
@@ -353,6 +422,86 @@ def build_parser() -> argparse.ArgumentParser:
     r_shift.add_argument("--email", default="quality.manager@kermit.local", help="quality manager email")
     r_shift.set_defaults(func=cmd_report_shift)
 
+    # demo (implemented) — single-command end-to-end compliance demonstration
+    demo = groups.add_parser("demo", help="One-command end-to-end compliance demonstration")
+    demo_actions = demo.add_subparsers(dest="action", required=True, metavar="<action>")
+    d_run = demo_actions.add_parser("run", help="preflight -> seed -> compliance suite -> evidence -> scorecard")
+    d_run.add_argument("--no-seed", action="store_true", help="run against existing warehouse data")
+    d_run.add_argument("--no-reset", action="store_true", help="seed without wiping prior DEMO-* rows")
+    d_run.add_argument("--shift", default="A", choices=["A", "B", "C"], help="shift for the report")
+    d_run.add_argument("--date", default=_dt.date.today().isoformat(), help="YYYY-MM-DD for the report")
+    d_run.add_argument("--email", help="quality-manager email for the report")
+    d_run.add_argument("--inject-critical", action="store_true",
+                       help="live overlay: publish a real CRITICAL event to Kafka")
+    d_run.add_argument("--start-jobs", action="store_true",
+                       help="live overlay: start Control Hub jobs (verify SDK job API first)")
+    d_run.add_argument("--keep-journal", action="store_true",
+                       help="do not reset the WireMock request journal before running")
+    d_run.add_argument("--evidence-dir", help="write the evidence pack here")
+    d_run.add_argument("--skip", nargs="*", default=[],
+                       help="stage names to skip (monitor sla-scan sla-check report evidence ...)")
+    d_run.set_defaults(func=cmd_demo_run)
+    d_seed = demo_actions.add_parser("seed", help="seed the deterministic golden-thread scenario")
+    d_seed.add_argument("--no-reset", action="store_true", help="upsert without wiping prior DEMO-* rows")
+    d_seed.set_defaults(func=cmd_demo_seed)
+
+    # preflight (implemented) — service health board
+    preflight = groups.add_parser("preflight", help="Service health board (run before a demo)")
+    pf_actions = preflight.add_subparsers(dest="action", required=True, metavar="<action>")
+    pf_run = pf_actions.add_parser("run", help="probe every service and print GREEN/RED board")
+    pf_run.set_defaults(func=cmd_preflight_run)
+
+    # evidence (implemented) — compliance evidence pack (JSON + HTML)
+    evidence = groups.add_parser("evidence", help="Assemble the compliance evidence pack")
+    ev_actions = evidence.add_subparsers(dest="action", required=True, metavar="<action>")
+    ev_pack = ev_actions.add_parser("pack", help="aggregate warehouse + WireMock journal -> JSON + HTML")
+    ev_pack.add_argument("--part", help="hero part_id for the traceability chain (default: demo hero)")
+    ev_pack.add_argument("--out", help="output directory (default: evidence/pack-<timestamp>)")
+    ev_pack.set_defaults(func=cmd_evidence_pack)
+
+    # schedule (implemented) — recurring compliance cadence
+    schedule = groups.add_parser("schedule", help="Run or install the recurring compliance cadence")
+    sc_actions = schedule.add_subparsers(dest="action", required=True, metavar="<action>")
+    sc_run = sc_actions.add_parser("run", help="run the cadence in this process (monitor + SLA + report)")
+    sc_run.add_argument("--monitor-interval", type=int, default=5, help="defect-rate interval, minutes")
+    sc_run.add_argument("--sla-interval", type=int, default=15, help="SLA scan interval, minutes")
+    sc_run.add_argument("--once", action="store_true", help="run each poller once and exit")
+    sc_run.set_defaults(func=cmd_schedule_run)
+    sc_install = sc_actions.add_parser("install", help="write cron / Task Scheduler / compose artefacts")
+    sc_install.add_argument("--dir", default="scripts/scheduled", help="output directory")
+    sc_install.add_argument("--monitor-interval", type=int, default=5)
+    sc_install.add_argument("--sla-interval", type=int, default=15)
+    sc_install.set_defaults(func=cmd_schedule_install)
+
+    # jobs (implemented) — Control Hub job lifecycle for the live path
+    jobs = groups.add_parser("jobs", help="Control Hub job lifecycle (status/create/start/stop)")
+    j_actions = jobs.add_subparsers(dest="action", required=True, metavar="<action>")
+    j_status = j_actions.add_parser("status", help="status board for the manufacturing jobs")
+    j_status.add_argument("--flow", nargs="*", help="flow names (default: quality_ingest defect_enrichment)")
+    j_status.set_defaults(func=cmd_jobs_status)
+    j_create = j_actions.add_parser("create", help="create missing jobs from their published pipelines")
+    j_create.add_argument("--flow", nargs="*", help="flow names to create")
+    j_create.add_argument("--start", action="store_true", help="start the jobs after creating them")
+    j_create.add_argument("--wait", action="store_true", help="wait for RUNNING before returning")
+    j_create.set_defaults(func=cmd_jobs_create)
+    j_start = j_actions.add_parser("start", help="start the core jobs (creates them if missing)")
+    j_start.add_argument("--flow", nargs="*", help="flow names to start")
+    j_start.add_argument("--wait", action="store_true", help="wait for RUNNING before returning")
+    j_start.add_argument("--no-create", action="store_true", help="do not auto-create missing jobs")
+    j_start.set_defaults(func=cmd_jobs_start)
+    j_stop = j_actions.add_parser("stop", help="stop the core jobs")
+    j_stop.add_argument("--flow", nargs="*", help="flow names to stop")
+    j_stop.add_argument("--force", action="store_true", help="force-stop without graceful wait")
+    j_stop.set_defaults(func=cmd_jobs_stop)
+
+    # teardown (implemented) — remove the demo's DEMO-* footprint
+    teardown = groups.add_parser("teardown", help="Remove DEMO-* data (and optionally stop jobs)")
+    t_actions = teardown.add_subparsers(dest="action", required=True, metavar="<action>")
+    t_run = t_actions.add_parser("run", help="delete DEMO-* rows; real warehouse data untouched")
+    t_run.add_argument("--stop-jobs", action="store_true", help="also stop Control Hub jobs")
+    t_run.add_argument("--clear-journal", action="store_true", help="also clear the WireMock journal")
+    t_run.set_defaults(func=cmd_teardown_run)
+
     # planned groups (declared for the full command tree)
     for group, actions, day in _PLANNED:
         grp = groups.add_parser(group, help=f"(planned, Day {day})")
@@ -365,6 +514,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    # Prefer UTF-8 console output so log messages (em dashes, section signs) render cleanly
+    # on Windows terminals instead of mojibake. Best-effort: harmless if unsupported.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001
+        pass
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

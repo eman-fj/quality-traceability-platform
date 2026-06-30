@@ -1,0 +1,7 @@
+# QTP compliance cadence — Windows Task Scheduler (run in an elevated PowerShell).
+# Adjust -TR working dir to your repo path; assumes `qtp` is on PATH.
+schtasks /Create /SC MINUTE /MO 5 /TN "QTP\DefectRate" /TR "cmd /c qtp monitor defect-rate" /F
+schtasks /Create /SC MINUTE /MO 15 /TN "QTP\SlaScan" /TR "cmd /c qtp sla scan" /F
+schtasks /Create /SC DAILY /ST 14:00 /TN "QTP\ReportA" /TR "cmd /c qtp report shift --shift A" /F
+schtasks /Create /SC DAILY /ST 22:00 /TN "QTP\ReportB" /TR "cmd /c qtp report shift --shift B" /F
+schtasks /Create /SC DAILY /ST 06:00 /TN "QTP\ReportC" /TR "cmd /c qtp report shift --shift C" /F

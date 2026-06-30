@@ -246,16 +246,19 @@ def scan(max_alerts: int = 10) -> int:
     fired = 0
     for row in breaches:
         report = build_report(row)
+        # An incomplete breach (traceability never completed) has no duration — show the
+        # SLA status instead of trying to format None as a number.
+        duration = report["sla"]["duration_minutes"]
+        dur = f"{duration:>8}" if duration is not None else f"{report['sla']['status']:>8}"
         if fired < max_alerts:
             enforcement = fire_alert_and_ticket(report)
             fired += 1
-            print("BREACH  {:30s} {:>8} min  alert={} jira={}".format(
-                report["part_id"],
-                report["sla"]["duration_minutes"],
+            print("BREACH  {:30s} {} min  alert={} jira={}".format(
+                report["part_id"], dur,
                 enforcement["alert_sent"], enforcement["jira_ticket"]))
         else:
-            print("BREACH  {:30s} {:>8} min  (alert suppressed — cap reached)".format(
-                report["part_id"], report["sla"]["duration_minutes"]))
+            print("BREACH  {:30s} {} min  (alert suppressed - cap reached)".format(
+                report["part_id"], dur))
 
     log.info("Scan complete: %d breach(es), %d alert(s)/ticket(s) raised (cap %d).",
              len(breaches), fired, max_alerts)

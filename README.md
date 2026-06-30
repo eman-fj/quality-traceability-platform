@@ -87,28 +87,89 @@ docker compose down        # stop
 docker compose down -v     # stop + wipe data volumes
 ```
 
+---
+
+## One-command demo
+
+The entire ISO 9001 story runs from a single command. It is **deterministic and repeatable**
+— it seeds a fixed "golden thread" scenario into the warehouse and runs the real compliance
+scripts against it, so it tells an identical, complete story every time, with or without a live
+Control Hub engine.
+
+```bash
+qtp demo run                 # preflight -> seed -> monitor -> SLA -> report -> evidence -> scorecard
+```
+
+On Windows, one script also boots the stack, waits for health, runs the demo, and opens the
+evidence pack:
+
+```powershell
+./scripts/demo.ps1           # or:  make demo   (Linux/macOS)
+```
+
+What `qtp demo run` does, as eight narrated stages:
+
+1. **Preflight** — GREEN/RED health board for all nine services.
+2. **Seed** — the golden thread: one CRITICAL part traced to a SUSPENDED supplier (SLA *met*),
+   one part breaching the 2-hour SLA, a line pushed over the 2% defect ceiling, and a full
+   shift dataset. All rows are namespaced `DEMO-*` and idempotent — they never touch real data.
+3. **Defect-rate monitor** — fires a CRITICAL alert + Jira ticket for the hot line.
+4. **SLA scan** — escalates every part untraced past two hours.
+5. **SLA chain** — reconstructs part → batch → supplier → certificate for the hero part.
+6. **Shift report** — Excel to MinIO + email to Mailhog.
+7. **Evidence pack** — `evidence/pack-<ts>/evidence.{json,html}` (screenshot-ready audit report).
+8. **Scorecard** — each of the five compliance controls resolved to PASS/FAIL with proof.
+
+Opt-in **live overlays** layer real pipeline activity on top of the deterministic story:
+
+```bash
+qtp demo run --inject-critical   # publish a real CRITICAL inspection event to Kafka
+qtp demo run --start-jobs        # start the Control Hub jobs (verify SDK job API on your engine)
+```
+
+## Scheduling the compliance cadence
+
+The compliance controls are recurring duties, not one-shots. Run them on a schedule:
+
+```bash
+qtp schedule run                 # in-process: monitor (5m) + SLA scan (15m) + shift reports
+qtp schedule install             # write cron / Windows Task Scheduler / docker-compose artefacts
+```
+
+`qtp schedule install` writes ready-to-use artefacts to `scripts/scheduled/` (a crontab, the
+Windows `schtasks` commands, and a `qtp-scheduler` compose service) so the cadence installs the
+native way on any host.
+
 ## Runbooks
 
-> The three runbooks below are required by the brief. _TODO — write each as its feature lands._
+The three runbooks required by the brief — all driven by the SDK CLI:
 
-- [ ] **Inject a CRITICAL defect and trace it through the full pipeline** (Day 5–7)
-- [ ] **Verify the traceability chain in Postgres and MySQL** (Day 5)
-- [ ] **Trigger the 2-hour SLA alert with the traceability checker** (Day 7)
+- [x] **Inject a CRITICAL defect and trace it through the full pipeline**
+  — `qtp demo run --inject-critical`, then `qtp sla check --part <id>`.
+- [x] **Verify the traceability chain in Postgres and MySQL**
+  — `qtp sla check --part DEMO-CRIT-0001` prints the full part→batch→supplier→certificate chain.
+- [x] **Trigger the 2-hour SLA alert with the traceability checker**
+  — `qtp sla scan` (the seeded `DEMO-SLA-0002` part breaches the 2-hour window).
 
 ## SDK (QTP CLI)
 
-> Structured Python package. _TODO — see [`docs/sdk-plan.md`](docs/sdk-plan.md) (to be added)._
+Structured Python package — run `qtp --help` for the full command tree.
 
 | Group | Example | Purpose |
 |-------|---------|---------|
-| `pipelines` | `qtp pipelines generate --config lines.yaml` | Generate/deploy pipelines from config |
+| `fragments` | `qtp fragments build` / `list` | Build, publish, and list shared fragments |
+| `pipelines` | `qtp pipelines generate` | Generate per-line ingestion + defect pipelines from `lines.yaml` |
 | `pipelines` | `qtp pipelines add-line --id line_4` | Onboard a new production line |
-| `pipelines` | `qtp pipelines promote --from dev --to prod` | Environment promotion via env_map |
-| `jobs` | `qtp jobs status` | Job lifecycle + status board |
-| `sla` | `qtp sla check --part <id>` | Traceability + 2-hour SLA enforcement |
-| `report` | `qtp report shift --shift A --date <d>` | Shift quality report |
-| `evidence` | `qtp evidence pack --part <id>` | Per-part audit evidence pack |
-| `demo` | `qtp demo run` | End-to-end demo orchestrator |
+| `pipelines` | `qtp pipelines promote --name <p> --to prod` | Environment promotion via env_map |
+| `sla` | `qtp sla check --part <id>` / `scan` | Traceability + 2-hour SLA enforcement |
+| `monitor` | `qtp monitor defect-rate` | Per-line defect-rate compliance check |
+| `report` | `qtp report shift --shift A --date <d>` | Shift quality report (Excel → MinIO + Mailhog) |
+| `preflight` | `qtp preflight run` | Service health board |
+| `demo` | `qtp demo run` | **One-command end-to-end compliance demonstration** |
+| `evidence` | `qtp evidence pack` | Compliance evidence pack (JSON + HTML audit report) |
+| `schedule` | `qtp schedule run` / `install` | Recurring compliance cadence |
+| `jobs` | `qtp jobs status` / `create` / `start` / `stop` | Control Hub job lifecycle (the live path) |
+| `teardown` | `qtp teardown run` | Remove the demo's `DEMO-*` footprint |
 
 ---
 
@@ -124,8 +185,10 @@ All ten shared fragments are used or explicitly accounted for — see the
 | Repo + skeleton | ✅ Day 1 |
 | Architecture diagram + ERD | ✅ Day 1 (draft) |
 | docker-compose.yml + simulator | ✅ Day 2 |
-| SDK package (`qtp` CLI) + 2 owned fragments | 🔄 Day 3 |
-| Pipelines (4) | ⬜ |
-| Compliance control tower | ⬜ |
-| Dashboards + reports | ⬜ |
+| SDK package (`qtp` CLI) + owned fragments | ✅ |
+| Pipelines (11 built) | ✅ |
+| Compliance control tower (SLA, defect-rate, audit, schema) | ✅ |
+| Shift report + evidence pack | ✅ |
+| One-command demo + scheduler | ✅ |
+| Dashboards (Grafana) | 🔄 |
 | Slide deck + LinkedIn | ⬜ |

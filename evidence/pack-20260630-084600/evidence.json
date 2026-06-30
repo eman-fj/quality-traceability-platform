@@ -1,0 +1,295 @@
+{
+  "generated_at": "2026-06-30T08:46:00.163402+00:00",
+  "host": "eman",
+  "preflight": [
+    {
+      "service": "postgres",
+      "description": "quality warehouse",
+      "ok": true,
+      "required": true,
+      "detail": "localhost:55432/quality",
+      "ms": 47
+    },
+    {
+      "service": "mysql",
+      "description": "ERP (suppliers/batches)",
+      "ok": true,
+      "required": false,
+      "detail": "localhost:33306/erp",
+      "ms": 61
+    },
+    {
+      "service": "wiremock",
+      "description": "classify/quarantine/alerts/jira",
+      "ok": true,
+      "required": true,
+      "detail": "http://localhost:18080",
+      "ms": 30
+    },
+    {
+      "service": "kafka",
+      "description": "inspection event bus",
+      "ok": true,
+      "required": false,
+      "detail": "localhost:39092",
+      "ms": 0
+    },
+    {
+      "service": "minio",
+      "description": "object storage (reports/DLQ)",
+      "ok": true,
+      "required": false,
+      "detail": "https://localhost:39000",
+      "ms": 78
+    },
+    {
+      "service": "mailhog",
+      "description": "email sink",
+      "ok": true,
+      "required": false,
+      "detail": "localhost (smtp 31025 / ui 38025)",
+      "ms": 46
+    },
+    {
+      "service": "grafana",
+      "description": "dashboards",
+      "ok": true,
+      "required": false,
+      "detail": "localhost:33000",
+      "ms": 15
+    },
+    {
+      "service": "prometheus",
+      "description": "metrics",
+      "ok": true,
+      "required": false,
+      "detail": "localhost:39090",
+      "ms": 0
+    },
+    {
+      "service": "controlhub",
+      "description": "StreamSets SDK target",
+      "ok": true,
+      "required": false,
+      "detail": "https://eu02.hub.streamsets.com/",
+      "ms": 94
+    }
+  ],
+  "compliance_controls": [
+    {
+      "control": "Traceability within 2 hours of detection",
+      "status": "PASS",
+      "evidence": "999 part(s) traced within 120 min; 2 open breach(es) flagged for escalation"
+    },
+    {
+      "control": "CRITICAL/MAJOR parts registered in quarantine",
+      "status": "PASS",
+      "evidence": "577/577 CRITICAL/MAJOR parts carry a quarantine_id"
+    },
+    {
+      "control": "Defect-rate alert when a line exceeds 2%",
+      "status": "PASS",
+      "evidence": "2 line(s) over 2.0%: line_3=13.00%, line_1=4.00%"
+    },
+    {
+      "control": "Every pipeline run recorded in the audit log",
+      "status": "PASS",
+      "evidence": "3 row(s) in quality.pipeline_audit"
+    },
+    {
+      "control": "Schema version stamped on every record",
+      "status": "PASS",
+      "evidence": "45202/45202 records carry a schema_version"
+    }
+  ],
+  "traceability_chain": {
+    "part_id": "DEMO-CRIT-0001",
+    "checked_at": "2026-06-30T08:46:00.545268+00:00",
+    "traceability_chain": {
+      "part": {
+        "part_id": "DEMO-CRIT-0001",
+        "line_id": "line_1",
+        "shift": "A",
+        "operator_id": "OP-101",
+        "inspection_timestamp": "2026-06-30T08:33:55.864506+00:00",
+        "defect_codes": [
+          "SUR-001"
+        ],
+        "defect_category": "CRITICAL",
+        "recommended_action": "SCRAP"
+      },
+      "material_batch": {
+        "material_batch_id": "BATCH-1009",
+        "material_grade": "EN-GJL250"
+      },
+      "supplier": {
+        "supplier_id": "SUP-05",
+        "supplier_name": "Adriatic Metalworks d.o.o"
+      },
+      "certificate_url": "https://certs.example/erp/BATCH-1009.pdf"
+    },
+    "quarantine_id": "DEMO-Q-0001",
+    "sla": {
+      "detected_at": "2026-06-30T08:33:55.864506+00:00",
+      "traceability_completed_at": "2026-06-30T08:38:55.864506+00:00",
+      "duration_minutes": 5.0,
+      "sla_minutes": 120,
+      "status": "MET"
+    },
+    "compliant": true
+  },
+  "open_sla_breaches": [
+    {
+      "detected_at": "2026-06-30T05:35:55.864506+00:00",
+      "traceability_completed_at": null,
+      "duration_minutes": null,
+      "sla_minutes": 120,
+      "status": "BREACHED",
+      "part_id": "DEMO-SLA-0002"
+    },
+    {
+      "detected_at": "2026-06-28 13:15:49.261029+00",
+      "traceability_completed_at": "2026-06-28T16:15:49.261029+00:00",
+      "duration_minutes": 180.0,
+      "sla_minutes": 120,
+      "status": "BREACHED",
+      "part_id": "PRT-DEMO-SLA-BREACH"
+    }
+  ],
+  "defect_rates": [
+    {
+      "line_id": "line_3",
+      "window_size": 100,
+      "defects": 13,
+      "defect_rate": 13.0
+    },
+    {
+      "line_id": "line_1",
+      "window_size": 100,
+      "defects": 4,
+      "defect_rate": 4.0
+    },
+    {
+      "line_id": "line_2",
+      "window_size": 100,
+      "defects": 1,
+      "defect_rate": 1.0
+    }
+  ],
+  "quarantine_register": [
+    {
+      "quarantine_id": "DEMO-Q-0001",
+      "part_id": "DEMO-CRIT-0001",
+      "status": "QUARANTINED",
+      "retry_count": 0
+    },
+    {
+      "quarantine_id": "DEMO-Q-0002",
+      "part_id": "DEMO-SLA-0002",
+      "status": "QUARANTINED",
+      "retry_count": 1
+    },
+    {
+      "quarantine_id": "DEMO-Q-L3-000",
+      "part_id": "DEMO-L3-MAJ-001",
+      "status": "QUARANTINED",
+      "retry_count": 0
+    },
+    {
+      "quarantine_id": "DEMO-Q-L3-001",
+      "part_id": "DEMO-L3-MAJ-002",
+      "status": "QUARANTINED",
+      "retry_count": 0
+    },
+    {
+      "quarantine_id": "DEMO-Q-L3-002",
+      "part_id": "DEMO-L3-MAJ-003",
+      "status": "QUARANTINED",
+      "retry_count": 0
+    },
+    {
+      "quarantine_id": "DEMO-Q-L3-003",
+      "part_id": "DEMO-L3-MAJ-004",
+      "status": "QUARANTINED",
+      "retry_count": 0
+    },
+    {
+      "quarantine_id": "DEMO-Q-L3-004",
+      "part_id": "DEMO-L3-MAJ-005",
+      "status": "QUARANTINED",
+      "retry_count": 0
+    }
+  ],
+  "pipeline_audit": [
+    {
+      "pipeline_name": "manufacturing__defect_enrichment",
+      "operator": "qtp-demo",
+      "environment": "dev",
+      "audit_metrics": "{\"defect_count\": 10, \"critical_count\": 2, \"quarantine_registrations\": 7, \"traceability_lookups\": 10, \"source\": \"qtp demo seed\"}",
+      "recorded_at": "2026-06-30T08:45:55.905670+00:00"
+    },
+    {
+      "pipeline_name": "manufactur__b2d04a2f-8bc2-43bf-96f1-e3c62ab2b929__ee5a552a-8945-11ee-a23c-673cdb9d2d12",
+      "operator": "qtp-sdk",
+      "environment": "dev",
+      "audit_metrics": "{}",
+      "recorded_at": "2026-06-29T08:59:53.553594+00:00"
+    },
+    {
+      "pipeline_name": "manufactur__b2d04a2f-8bc2-43bf-96f1-e3c62ab2b929__ee5a552a-8945-11ee-a23c-673cdb9d2d12",
+      "operator": "qtp-sdk",
+      "environment": "dev",
+      "audit_metrics": "{}",
+      "recorded_at": "2026-06-29T08:59:22.787921+00:00"
+    }
+  ],
+  "external_actions": {
+    "available": true,
+    "alerts": [
+      {
+        "severity": "CRITICAL",
+        "type": "traceability_sla_breach",
+        "part_id": "PRT-DEMO-SLA-BREACH",
+        "duration_minutes": 180.0,
+        "message": "Traceability SLA breach: PRT-DEMO-SLA-BREACH (180.0 min > 120 min)"
+      },
+      {
+        "severity": "CRITICAL",
+        "type": "traceability_sla_breach",
+        "part_id": "DEMO-SLA-0002",
+        "duration_minutes": null,
+        "message": "Traceability SLA breach: DEMO-SLA-0002 (None min > 120 min)"
+      },
+      {
+        "severity": "CRITICAL",
+        "type": "defect_rate_breach",
+        "line_id": "line_1",
+        "defect_rate": 4.0,
+        "message": "Defect rate breach: line line_1 at 4.0% (> 2.0% over last 100 parts)"
+      },
+      {
+        "severity": "CRITICAL",
+        "type": "defect_rate_breach",
+        "line_id": "line_3",
+        "defect_rate": 13.0,
+        "message": "Defect rate breach: line line_3 at 13.0% (> 2.0% over last 100 parts)"
+      }
+    ],
+    "jira_tickets": [
+      {
+        "summary": "Traceability SLA breach: PRT-DEMO-SLA-BREACH (180.0 min > 120 min)"
+      },
+      {
+        "summary": "Traceability SLA breach: DEMO-SLA-0002 (None min > 120 min)"
+      },
+      {
+        "summary": "Defect rate breach: line line_1 at 4.0% (> 2.0% over last 100 parts)"
+      },
+      {
+        "summary": "Defect rate breach: line line_3 at 13.0% (> 2.0% over last 100 parts)"
+      }
+    ],
+    "classify_calls": 0,
+    "quarantine_calls": 0
+  }
+}

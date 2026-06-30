@@ -1,0 +1,6 @@
+# QTP compliance cadence — install with: crontab qtp-cron
+*/5 * * * * cd /path/to/quality-traceability-platform && qtp monitor defect-rate >> /var/log/qtp-monitor.log 2>&1
+*/15 * * * * cd /path/to/quality-traceability-platform && qtp sla scan >> /var/log/qtp-sla.log 2>&1
+0 14 * * * cd /path/to/quality-traceability-platform && qtp report shift --shift A >> /var/log/qtp-report.log 2>&1
+0 22 * * * cd /path/to/quality-traceability-platform && qtp report shift --shift B >> /var/log/qtp-report.log 2>&1
+0 6  * * * cd /path/to/quality-traceability-platform && qtp report shift --shift C >> /var/log/qtp-report.log 2>&1

@@ -1,0 +1,16 @@
+# Append to docker-compose.yml (or use `docker compose -f docker-compose.scheduler.yml up`)
+# to run the cadence as a service inside the stack.
+  qtp-scheduler:
+    build: .
+    container_name: qtp-scheduler
+    command: ["qtp", "schedule", "run",
+             "--monitor-interval", "5", "--sla-interval", "15"]
+    env_file: [.env]
+    environment:
+      PG_HOST: postgres
+      MYSQL_HOST: mysql
+      WIREMOCK_BASE_URL: http://wiremock:8080
+      MAILHOG_HOST: mailhog
+    depends_on: [postgres, wiremock]
+    restart: unless-stopped
+    networks: [qtp]
