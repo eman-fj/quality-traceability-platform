@@ -30,6 +30,18 @@ def cmd_fragments_build(args) -> int:
 
     for name in names:
         publish_name = args.as_name or name
+        if args.replace:
+            # `fragments build` creates a NEW fragment each run, so repeated builds leave
+            # duplicates and `get(name=...)` becomes ambiguous. --replace deletes every
+            # existing copy of this name first, leaving exactly one clean fragment.
+            existing = list(sch.pipelines.get_all(name=publish_name, fragment=True))
+            for old in existing:
+                try:
+                    sch.delete_pipeline(old)
+                    log.info("Deleted existing fragment copy '%s'.", publish_name)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Could not delete '%s' (%s); remove it manually if it lingers.",
+                                publish_name, exc)
         log.info("Building fragment '%s'%s...", name, f" as '{publish_name}'" if args.as_name else "")
         fragment = FRAGMENT_BUILDERS[name](sch, engine.id, name=publish_name)
         sch.publish_pipeline(
@@ -47,11 +59,22 @@ def cmd_fragments_list(args) -> int:
 
     sch = get_control_hub()
     fragments = sch.pipelines.get_all(fragment=True)
-    print(f"{'FRAGMENT':40} OWNED")
+    # OWNED = name is in our local builder registry (NOT real Control Hub ownership).
+    # ID is the stable Control Hub object id — use it to pin a fragment in
+    # config/fragment_pins.yaml when the name collides with a teammate's copy.
+    print(f"{'FRAGMENT':40} {'OWNED':6} {'VERSION':8} ID")
     owned = set(FRAGMENT_BUILDERS)
     for frag in fragments:
         name = getattr(frag, "name", str(frag))
-        print(f"{name:40} {'yes' if name in owned else ''}")
+        fid = getattr(frag, "id", "")
+        version = str(getattr(frag, "version", "") or "")
+        committer = ""
+        try:
+            committer = frag._data.get("committer", "") or ""  # noqa: SLF001
+        except Exception:  # noqa: BLE001
+            pass
+        flag = "yes" if name in owned else ""
+        print(f"{name:40} {flag:6} {version:8} {fid}  {committer}")
     return 0
 
 
@@ -206,6 +229,32 @@ def cmd_report_shift(args) -> int:
     return generate(args.shift, args.date, args.email)
 
 
+# ------------------------------------------------------------------------ monitor
+def cmd_monitor_defect_rate(args) -> int:
+    from .monitor.defect_rate_monitor import check
+
+    return check(args.window, args.threshold)
+
+
+# ------------------------------------------------------- pipelines manager (per-line)
+def cmd_pipelines_generate(args) -> int:
+    from .manage.quality_pipeline_manager import generate
+
+    return generate(engine_id=args.engine_id, draft=args.draft, replace=args.replace)
+
+
+def cmd_pipelines_add_line(args) -> int:
+    from .manage.quality_pipeline_manager import add_line
+
+    return add_line(args.id, args.partitions, engine_id=args.engine_id, draft=args.draft)
+
+
+def cmd_pipelines_promote(args) -> int:
+    from .manage.quality_pipeline_manager import promote
+
+    return promote(args.name, to_env=args.to, engine_id=args.engine_id, draft=args.draft)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="qtp",
@@ -252,9 +301,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_preview.add_argument("--engine-id", help="authoring Data Collector id (else ENGINE_ID/SDC_ID)")
     p_preview.set_defaults(func=cmd_pipelines_preview)
 
-    for action, day in [("generate", "4-6"), ("add-line", "6"), ("promote", "6"), ("deploy", "6")]:
-        act = p_actions.add_parser(action, help=f"(planned, Day {day})")
-        act.set_defaults(func=make_planned("pipelines", action, day))
+    # per-line fleet management (implemented)
+    p_gen = p_actions.add_parser("generate", help="generate per-line ingestion + defect pipelines from lines.yaml")
+    p_gen.add_argument("--engine-id", help="authoring Data Collector id (else ENGINE_ID/SDC_ID)")
+    p_gen.add_argument("--draft", action="store_true", help="publish as drafts")
+    p_gen.add_argument("--replace", action="store_true", help="replace existing same-named pipelines")
+    p_gen.set_defaults(func=cmd_pipelines_generate)
+
+    p_add = p_actions.add_parser("add-line", help="onboard a new production line (updates lines.yaml + generates)")
+    p_add.add_argument("--id", required=True, help="new line id, e.g. line_4")
+    p_add.add_argument("--partitions", default="0", help="Kafka partition(s) for the line")
+    p_add.add_argument("--engine-id", help="authoring Data Collector id (else ENGINE_ID/SDC_ID)")
+    p_add.add_argument("--draft", action="store_true", help="publish as drafts")
+    p_add.set_defaults(func=cmd_pipelines_add_line)
+
+    p_promote = p_actions.add_parser("promote", help="promote a pipeline to another env (env_map pattern)")
+    p_promote.add_argument("--name", required=True, help="pipeline name to promote")
+    p_promote.add_argument("--to", default="prod", help="target environment (default prod)")
+    p_promote.add_argument("--engine-id", help="authoring Data Collector id (else ENGINE_ID/SDC_ID)")
+    p_promote.add_argument("--draft", action="store_true", help="publish the promoted pipeline as a draft")
+    p_promote.set_defaults(func=cmd_pipelines_promote)
+
+    act = p_actions.add_parser("deploy", help="(planned, Day 6)")
+    act.set_defaults(func=make_planned("pipelines", "deploy", "6"))
 
     # sla (implemented) — 2-hour ISO 9001 traceability compliance
     sla = groups.add_parser("sla", help="Traceability 2-hour SLA enforcement (ISO 9001)")
@@ -265,6 +334,14 @@ def build_parser() -> argparse.ArgumentParser:
     s_scan = sla_actions.add_parser("scan", help="poll for SLA breaches and raise alerts")
     s_scan.add_argument("--max-alerts", type=int, default=10, help="cap alerts per scan (default 10)")
     s_scan.set_defaults(func=cmd_sla_scan)
+
+    # monitor (implemented) — operational compliance checks
+    monitor = groups.add_parser("monitor", help="Operational monitoring / compliance checks")
+    monitor_actions = monitor.add_subparsers(dest="action", required=True, metavar="<action>")
+    m_dr = monitor_actions.add_parser("defect-rate", help="per-line defect-rate check (CRITICAL alert if >2%)")
+    m_dr.add_argument("--window", type=int, default=100, help="rolling window of recent parts per line (default 100)")
+    m_dr.add_argument("--threshold", type=float, default=2.0, help="defect-rate %% ceiling (default 2.0)")
+    m_dr.set_defaults(func=cmd_monitor_defect_rate)
 
     # report (implemented) — end-of-shift quality report
     import datetime as _dt

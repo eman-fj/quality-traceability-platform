@@ -67,6 +67,20 @@ CREATE TABLE supplier_audit (
     window_end               TIMESTAMPTZ
 );
 
+-- Recovered dead-letter records (written by the dlq_recovery pipeline, which reads the
+-- MinIO error bucket and enriches each record with the dead_letter_queue_handler fragment).
+-- SDC discards per-stage error metadata when error records are re-read from the archive,
+-- so recovery captures the failed record's identity (part_id/line_id) + source pipeline +
+-- time — enough to locate, investigate, and reprocess the part.
+CREATE TABLE dlq_recovery (
+    id                  BIGSERIAL PRIMARY KEY,
+    dlq_source_pipeline TEXT,
+    part_id             TEXT,
+    line_id             TEXT,
+    dlq_error_timestamp TIMESTAMPTZ,
+    recovered_at        TIMESTAMPTZ DEFAULT now()
+);
+
 -- Generated shift reports.
 CREATE TABLE shift_reports (
     report_id        TEXT PRIMARY KEY,
@@ -77,16 +91,17 @@ CREATE TABLE shift_reports (
     generated_at     TIMESTAMPTZ DEFAULT now()
 );
 
--- Audit row per pipeline run (written by the audit_log_writer fragment).
+-- Audit row per pipeline run, written by the shared audit_log_writer fragment
+-- (Expression Evaluator -> JDBC Producer). Columns match the fragment's output fields so
+-- its auto field->column mapping works. The per-run metrics (record/error/critical/
+-- traceability/quarantine counts, report generation time) are carried in audit_metrics as
+-- JSON — the fragment's AUDIT_METRICS_JSON parameter, set at run time.
 CREATE TABLE pipeline_audit (
-    run_id                    TEXT PRIMARY KEY,
-    pipeline_name             TEXT,
-    record_count              INTEGER,
-    error_count               INTEGER,
-    critical_count            INTEGER,
-    traceability_lookups      INTEGER,
-    quarantine_registrations  INTEGER,
-    environment               TEXT,
-    operator                  TEXT,
-    run_at                    TIMESTAMPTZ DEFAULT now()
+    id            BIGSERIAL PRIMARY KEY,
+    pipeline_name TEXT,
+    run_ts        TIMESTAMPTZ,
+    operator      TEXT,
+    environment   TEXT,
+    audit_metrics TEXT,
+    recorded_at   TIMESTAMPTZ DEFAULT now()
 );

@@ -24,6 +24,7 @@ The dead_letter_queue_handler fragment stamps dlq_* fields on error records in t
 recovery pipeline that reads from kermit-error-dlq; it is not needed here.
 """
 
+from ..common.fragments import resolve_fragment
 from ..common.util import get_logger, set_config, set_first
 
 PIPELINE_NAME = "manufacturing__quality_ingest"
@@ -34,7 +35,7 @@ INLINE_FRAGMENTS = ["kafka_header_enricher", "data_quality_tagger", "schema_vers
 log = get_logger()
 
 
-def build(sch, engine_id, name=None, line_id=None):
+def build(sch, engine_id, name=None, line_id=None, env="dev"):
     """Build the quality-ingestion pipeline.
 
     line_id=None builds the all-lines pipeline (default). When a line_id is given (by
@@ -54,17 +55,19 @@ def build(sch, engine_id, name=None, line_id=None):
         data_format="JSON",
         broker_uri="${KAFKA_BROKER}",
     )
+    # Dedicated per-line pipeline: a Stream Selector right after the origin keeps only this
+    # line's records (lane 0) and discards the rest (lane 1 -> Trash). The Kafka origin has
+    # no record-precondition config, so a selector is the reliable per-line filter.
+    line_filter = line_trash = None
     if line_id:
-        # Dedicated per-line pipeline: keep only this line's inspection events.
-        try:
-            origin.stage_record_preconditions = [f"${{record:value('/line_id') == '{line_id}'}}"]
-        except Exception as exc:  # noqa: BLE001
-            log.warning("Could not set per-line precondition on origin (%s).", exc)
+        line_filter = builder.add_stage("Stream Selector")
+        line_filter.predicates = [f"${{record:value('/line_id') == '{line_id}'}}", "default"]
+        line_trash = builder.add_stage("Trash")
 
     # --- Stage A: inline enrichment — pull published shared fragments and chain them -
     enrichers = []
     for frag_name in INLINE_FRAGMENTS:
-        fragment = sch.pipelines.get(name=frag_name, fragment=True)
+        fragment = resolve_fragment(sch, frag_name)
         enrichers.append(builder.add_fragment(fragment))
 
     # --- Stage A: route clean vs defect ----------------------------------------------
@@ -141,17 +144,24 @@ def build(sch, engine_id, name=None, line_id=None):
     #
     # AUDIT_JDBC_URL / AUDIT_SCHEMA / AUDIT_TABLE are in pipeline.parameters below, ready.
 
-    # --- Stage A: Wire origin -> enrichers -> selector -> defect/clean ---------------
-    stage = origin
+    # --- Stage A: Wire (optional line filter ->) origin -> enrichers -> selector ------
+    if line_filter is not None:
+        origin >> line_filter           # per-line: keep this line, discard the rest
+        head = line_filter              # lane 0 (matching line) feeds the chain
+    else:
+        head = origin
+    stage = head
     for enricher in enrichers:
         stage = stage >> enricher
     stage >> selector
     selector >> defect_out              # lane 0: defect  -> Kafka Producer
     selector >> field_remover           # lane 1: clean   -> strip non-column fields
     field_remover >> clean_out          #                 -> JDBC Producer (conforming_parts)
+    if line_filter is not None:
+        line_filter >> line_trash       # lane 1: other lines -> Trash
 
     full_name = name or (PIPELINE_NAME + (f"__{line_id}" if line_id else ""))
-    labels = LABELS + ([f"line:{line_id}"] if line_id else [])
+    labels = ["industry:manufacturing", f"env:{env}"] + ([f"line:{line_id}"] if line_id else [])
     pipeline = builder.build(full_name, description=__doc__.split("\n")[0], labels=labels)
 
     # Capture the record as it looked at the failing stage (post-enrichment), not the

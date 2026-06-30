@@ -1,0 +1,4 @@
+# pinning fragment versions for duplicate fragments across the shared workspace
+pins:
+  kafka_header_enricher: 096a2d49-6a83-43b5-b4e3-14ea254bfddb:ee5a552a-8945-11ee-a23c-673cdb9d2d12
+  data_quality_tagger:   3514c567-7c40-4baa-97ab-46f93557812c:ee5a552a-8945-11ee-a23c-673cdb9d2d12
