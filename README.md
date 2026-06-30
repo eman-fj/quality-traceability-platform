@@ -97,7 +97,7 @@ scripts against it, so it tells an identical, complete story every time, with or
 Control Hub engine.
 
 ```bash
-qtp demo run                 # preflight -> seed -> monitor -> SLA -> report -> evidence -> scorecard
+qtp demo run                 # preflight -> seed -> monitor -> SLA -> report -> evidence -> summary
 ```
 
 On Windows, one script also boots the stack, waits for health, runs the demo, and opens the
@@ -118,7 +118,7 @@ What `qtp demo run` does, as eight narrated stages:
 5. **SLA chain** — reconstructs part → batch → supplier → certificate for the hero part.
 6. **Shift report** — Excel to MinIO + email to Mailhog.
 7. **Evidence pack** — `evidence/pack-<ts>/evidence.{json,html}` (screenshot-ready audit report).
-8. **Scorecard** — each of the five compliance controls resolved to PASS/FAIL with proof.
+8. **Compliance result** — each of the five ISO 9001 controls resolved to PASS/FAIL, with the evidence pack path.
 
 Opt-in **live overlays** layer real pipeline activity on top of the deterministic story:
 

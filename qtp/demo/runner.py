@@ -45,41 +45,66 @@ def _banner(step: int, total: int, title: str, control: str) -> None:
 
 
 class _Stages:
-    """Collects per-stage outcomes so the scorecard can summarise the whole run."""
+    """Tracks per-stage outcomes to compute the exit code. Optional stages (the live
+    overlays) are recorded but don't fail the run if they can't complete."""
 
     def __init__(self):
         self.results: list[dict] = []
 
-    def record(self, name: str, ok: bool, detail: str = "") -> None:
-        self.results.append({"stage": name, "ok": ok, "detail": detail})
+    def record(self, name: str, ok: bool, detail: str = "", optional: bool = False) -> None:
+        self.results.append({"stage": name, "ok": ok, "detail": detail, "optional": optional})
 
     @property
-    def all_ok(self) -> bool:
-        return all(r["ok"] for r in self.results)
+    def critical_failures(self) -> list[dict]:
+        return [r for r in self.results if not r["ok"] and not r["optional"]]
 
 
 # ------------------------------------------------------------------ live overlays
-def inject_critical() -> tuple[bool, str]:
-    """Publish one real CRITICAL inspection event to Kafka (host side). Best-effort overlay."""
-    try:
-        import json
-        from datetime import datetime, timezone
+def _critical_event() -> dict:
+    from datetime import datetime, timezone
 
-        from kafka import KafkaProducer
-    except Exception as exc:  # noqa: BLE001
-        return False, f"kafka-python not available on host ({exc}); skipping live inject"
-
-    bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS",
-                          f"localhost:{os.getenv('KAFKA_PORT', '9092')}")
-    topic = os.getenv("INSPECTIONS_TOPIC", "quality.inspections")
     now = datetime.now(timezone.utc)
-    event = {
+    return {
         "part_id": f"LIVE-CRIT-{now.strftime('%H%M%S')}",
         "line_id": "line_1", "inspection_timestamp": now.isoformat(),
         "measurements": {"surface_score": 0.97, "hardness_hrc": 37.0},
         "defect_codes": ["SUR-001"], "material_batch_id": "BATCH-1009",
         "operator_id": "OP-101", "shift": "A", "schema_version": 1,
     }
+
+
+def _inject_via_docker(event: dict, topic: str) -> tuple[bool, str]:
+    """Fallback path: publish through the Kafka container's console producer (no host
+    kafka client needed — only the Docker CLI, which is already present since the stack runs)."""
+    import json
+    import subprocess
+
+    container = os.getenv("KAFKA_CONTAINER", "qtp-kafka")
+    cmd = ["docker", "exec", "-i", container, "kafka-console-producer",
+           "--bootstrap-server", "localhost:29092", "--topic", topic]
+    try:
+        proc = subprocess.run(cmd, input=(json.dumps(event) + "\n").encode("utf-8"),
+                              capture_output=True, timeout=25)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return False, f"docker inject failed ({exc})"
+    if proc.returncode == 0:
+        return True, f"published {event['part_id']} (SUR-001) to {topic} via {container}"
+    return False, f"docker inject failed: {proc.stderr.decode(errors='replace').strip()[:200]}"
+
+
+def inject_critical() -> tuple[bool, str]:
+    """Publish one real CRITICAL inspection event to Kafka. Uses the host kafka client if
+    present, else falls back to the Kafka container's console producer via Docker."""
+    import json
+
+    topic = os.getenv("INSPECTIONS_TOPIC", "quality.inspections")
+    event = _critical_event()
+    try:
+        from kafka import KafkaProducer
+    except Exception:  # noqa: BLE001 - no host kafka client; use the Docker fallback
+        return _inject_via_docker(event, topic)
+
+    bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", f"localhost:{os.getenv('KAFKA_PORT', '9092')}")
     try:
         producer = KafkaProducer(
             bootstrap_servers=bootstrap,
@@ -90,8 +115,9 @@ def inject_critical() -> tuple[bool, str]:
         producer.flush(timeout=8)
         producer.close(timeout=4)
         return True, f"published {event['part_id']} (SUR-001) to {topic} on {bootstrap}"
-    except Exception as exc:  # noqa: BLE001
-        return False, f"Kafka publish failed: {exc}"
+    except Exception as exc:  # noqa: BLE001 - host publish failed; try the Docker fallback
+        ok, detail = _inject_via_docker(event, topic)
+        return (ok, detail) if ok else (False, f"Kafka publish failed: {exc}")
 
 
 def start_jobs() -> tuple[bool, str]:
@@ -112,41 +138,25 @@ def start_jobs() -> tuple[bool, str]:
         return False, f"Control Hub job start failed ({exc}); deterministic demo unaffected"
 
 
-# ----------------------------------------------------------------------- scorecard
-_RUBRIC = {
-    "Technical Correctness": "preflight + seed + scripts ran without errors",
-    "SDK Depth & Creativity": "one-command orchestration, fleet generation, evidence pack",
-    "Compliance & Governance": "2h SLA, quarantine, defect-rate, audit, schema version",
-    "Documentation": "evidence.html / evidence.json artefacts produced",
-    "Presentation": "narrated, deterministic, repeatable single-command demo",
-}
-
-
-def _print_scorecard(stages: _Stages, bundle: dict, paths: dict) -> None:
-    print("\n" + _c("1;33", "#" * 70))
-    print(_c("1;33", "  COMPLIANCE SCORECARD"))
-    print(_c("1;33", "#" * 70))
-
-    print("\n  Compliance controls (brief section 6):")
-    for c in bundle["compliance_controls"]:
+# ----------------------------------------------------------------------- summary
+def _print_summary(bundle: dict, paths: dict) -> None:
+    """Print the compliance result for the run: the ISO 9001 controls and where the
+    evidence lives. (No stage checklist or rubric — the detail is in the evidence pack.)"""
+    controls = bundle.get("compliance_controls", [])
+    if not controls:
+        return
+    print("\n" + _c("36", "=" * 70))
+    print(_c("1;36", "  Compliance result (ISO 9001 controls)"))
+    print(_c("36", "=" * 70) + "\n")
+    for c in controls:
         mark = _c("32", "PASS") if c["status"] == "PASS" else _c("31", "FAIL")
-        print(f"    [{mark}] {c['control']}")
-        print(f"           {c['evidence']}")
-
-    print("\n  Demo stages:")
-    for r in stages.results:
-        mark = _c("32", " ok ") if r["ok"] else _c("31", "fail")
-        print(f"    [{mark}] {r['stage']:<22} {r['detail']}")
-
-    print("\n  Rubric coverage:")
-    for dim, how in _RUBRIC.items():
-        print(f"    - {dim:<24} {how}")
-
-    passed = sum(1 for c in bundle["compliance_controls"] if c["status"] == "PASS")
-    print("\n  " + _c("1;36",
-          f"{passed}/{len(bundle['compliance_controls'])} compliance controls PASS | "
-          f"evidence: {paths.get('html', '?')}"))
-    print()
+        print(f"  {mark}  {c['control']}")
+        print(f"        {c['evidence']}")
+    passed = sum(1 for c in controls if c["status"] == "PASS")
+    line = f"{passed}/{len(controls)} controls passed"
+    if paths.get("html"):
+        line += f"  |  evidence: {paths['html']}"
+    print("\n  " + _c("1;36", line) + "\n")
 
 
 # ----------------------------------------------------------------------------- run
@@ -165,7 +175,7 @@ def run(*, seed_data=True, reset=True, shift="A", date=None, email=None,
         plan.append("seed")
     if inject:
         plan.append("inject")
-    plan += ["monitor", "sla-scan", "sla-check", "report", "evidence", "scorecard"]
+    plan += ["monitor", "sla-scan", "sla-check", "report", "evidence", "summary"]
     plan = [s for s in plan if s not in skip]
     total = len(plan)
     step = 0
@@ -191,7 +201,6 @@ def run(*, seed_data=True, reset=True, shift="A", date=None, email=None,
         if down:
             log.error("Required service(s) down: %s — start the stack and re-run.", ", ".join(down))
             stages.record("preflight", False, "required services down: " + ", ".join(down))
-            _print_scorecard(stages, {"compliance_controls": []}, {})
             return 1
         stages.record("preflight", True, f"{sum(r['ok'] for r in results)}/{len(results)} services up")
 
@@ -200,7 +209,7 @@ def run(*, seed_data=True, reset=True, shift="A", date=None, email=None,
         begin("jobs", "Start Control Hub jobs (live overlay)", "SDK job orchestration")
         ok, detail = start_jobs()
         log.info("%s", detail)
-        stages.record("start-jobs", ok, detail)
+        stages.record("start-jobs", ok, detail, optional=True)
 
     # 2) Seed --------------------------------------------------------------------
     if "seed" in plan:
@@ -218,7 +227,7 @@ def run(*, seed_data=True, reset=True, shift="A", date=None, email=None,
         begin("inject", "Inject live CRITICAL event (live overlay)", "real-time ingest path")
         ok, detail = inject_critical()
         log.info("%s", detail)
-        stages.record("inject-critical", ok, detail)
+        stages.record("inject-critical", ok, detail, optional=True)
 
     if settle and ("seed" in plan or "inject" in plan):
         time.sleep(settle)  # let any live path settle before reading the warehouse
@@ -295,12 +304,12 @@ def run(*, seed_data=True, reset=True, shift="A", date=None, email=None,
             log.error("Evidence pack failed: %s", exc)
             stages.record("evidence", False, str(exc))
 
-    # 8) Scorecard ---------------------------------------------------------------
-    if "scorecard" in plan:
-        _print_scorecard(stages, bundle, paths)
+    # 8) Compliance summary ------------------------------------------------------
+    if "summary" in plan:
+        _print_summary(bundle, paths)
 
-    failed = sum(1 for r in stages.results if not r["ok"])
-    return 0 if failed == 0 else 1
+    # Optional live overlays (jobs/inject) failing does not fail the run.
+    return 0 if not stages.critical_failures else 1
 
 
 def main(argv=None) -> int:

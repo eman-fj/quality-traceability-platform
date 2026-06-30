@@ -520,6 +520,12 @@ def main(argv=None) -> int:
         sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
         pass
+    # Cap BLAS thread pools (numpy is pulled in transitively by openpyxl in the report).
+    # The CLI does no real linear algebra, and a multi-thread BLAS pool can fail to allocate
+    # on a low-RAM host running the full Docker stack (OpenBLAS "Memory allocation failed").
+    # Must be set before numpy is first imported; respects any value the user already set.
+    for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+        os.environ.setdefault(_var, "1")
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

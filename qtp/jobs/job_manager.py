@@ -111,19 +111,29 @@ def create(flows=None, start=False, wait=False) -> int:
     return 0
 
 
+def _is_active(job) -> bool:
+    """True if the job is already running (any ACTIVE/ACTIVATING state)."""
+    return _status_str(job).upper().startswith("ACTIV")
+
+
 def _start(sch, flows, wait=False) -> int:
-    jobs = []
+    to_start, already = [], []
     for flow in flows:
         job = _find_job(sch, job_name(flow))
         if job is None:
             log.warning("Job '%s' not found — run `qtp jobs create` first.", job_name(flow))
             continue
-        jobs.append(job)
-    if not jobs:
+        (already if _is_active(job) else to_start).append(job)
+
+    if already:
+        log.info("Already running: %s", ", ".join(j.job_name for j in already))
+    if not to_start:
+        if already:
+            return 0  # everything is already up — nothing to do (idempotent, not an error)
         log.error("No jobs to start.")
         return 1
-    sch.start_job(*jobs, wait=wait)
-    log.info("Started %d job(s): %s%s", len(jobs), ", ".join(j.job_name for j in jobs),
+    sch.start_job(*to_start, wait=wait)
+    log.info("Started %d job(s): %s%s", len(to_start), ", ".join(j.job_name for j in to_start),
              "" if wait else " (not waiting for RUNNING)")
     return 0
 
