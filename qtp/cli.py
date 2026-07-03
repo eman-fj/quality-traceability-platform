@@ -191,18 +191,6 @@ def cmd_pipelines_preview(args) -> int:
     return 0
 
 
-# --------------------------------------------------------------------- planned groups
-def make_planned(group: str, action: str, day: str):
-    def _handler(args) -> int:
-        log.info("`qtp %s %s` is planned for Day %s - not yet implemented.", group, action, day)
-        return 0
-
-    return _handler
-
-
-_PLANNED = []  # all command groups are now implemented
-
-
 # ----------------------------------------------------------------------- jobs
 def cmd_jobs_status(args) -> int:
     from .jobs.job_manager import status
@@ -324,6 +312,13 @@ def cmd_pipelines_promote(args) -> int:
     return promote(args.name, to_env=args.to, engine_id=args.engine_id, draft=args.draft)
 
 
+def cmd_pipelines_export(args) -> int:
+    from .manage.pipeline_export import export
+
+    written = export(out_dir=args.out, names=args.name, save_archive=not args.no_archive)
+    return 0 if written else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="qtp",
@@ -391,8 +386,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_promote.add_argument("--draft", action="store_true", help="publish the promoted pipeline as a draft")
     p_promote.set_defaults(func=cmd_pipelines_promote)
 
-    act = p_actions.add_parser("deploy", help="(planned, Day 6)")
-    act.set_defaults(func=make_planned("pipelines", "deploy", "6"))
+    p_export = p_actions.add_parser("export", help="export published pipelines to importable JSON in /pipelines")
+    p_export.add_argument("--name", nargs="*", help="full pipeline name(s) to export (default: all manufacturing__*)")
+    p_export.add_argument("--out", default="pipelines", help="output directory (default: pipelines/)")
+    p_export.add_argument("--no-archive", action="store_true", help="skip writing the combined importable .zip")
+    p_export.set_defaults(func=cmd_pipelines_export)
 
     # sla (implemented) — 2-hour ISO 9001 traceability compliance
     sla = groups.add_parser("sla", help="Traceability 2-hour SLA enforcement (ISO 9001)")
@@ -501,14 +499,6 @@ def build_parser() -> argparse.ArgumentParser:
     t_run.add_argument("--stop-jobs", action="store_true", help="also stop Control Hub jobs")
     t_run.add_argument("--clear-journal", action="store_true", help="also clear the WireMock journal")
     t_run.set_defaults(func=cmd_teardown_run)
-
-    # planned groups (declared for the full command tree)
-    for group, actions, day in _PLANNED:
-        grp = groups.add_parser(group, help=f"(planned, Day {day})")
-        grp_actions = grp.add_subparsers(dest="action", required=True, metavar="<action>")
-        for action in actions:
-            act = grp_actions.add_parser(action, help=f"(planned, Day {day})")
-            act.set_defaults(func=make_planned(group, action, day))
 
     return parser
 

@@ -161,6 +161,7 @@ Structured Python package — run `qtp --help` for the full command tree.
 | `pipelines` | `qtp pipelines generate` | Generate per-line ingestion + defect pipelines from `lines.yaml` |
 | `pipelines` | `qtp pipelines add-line --id line_4` | Onboard a new production line |
 | `pipelines` | `qtp pipelines promote --name <p> --to prod` | Environment promotion via env_map |
+| `pipelines` | `qtp pipelines export` | Export published pipelines to importable JSON in `/pipelines` |
 | `sla` | `qtp sla check --part <id>` / `scan` | Traceability + 2-hour SLA enforcement |
 | `monitor` | `qtp monitor defect-rate` | Per-line defect-rate compliance check |
 | `report` | `qtp report shift --shift A --date <d>` | Shift quality report (Excel → MinIO + Mailhog) |
