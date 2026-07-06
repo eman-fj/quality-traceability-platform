@@ -5,7 +5,7 @@ and write to the defective-parts warehouse. Feeds from the quality_ingest defect
 
     Kafka (quality.defects.major)
         -> kafka_header_enricher    (standard metadata headers)
-        -> data_quality_tagger      (dq_score / dq_status)
+        -> data_quality_tagger      (quality_score / quality_issues — reused teammate Jython fragment, upstream)
         -> schema_version_tagger    (schema_version - ISO audit)
         -> JDBC Lookup              (MySQL ERP: batch → supplier + grade + certificate)
         -> HTTP Client classify     (POST /defects/classify → defect_category, recommended_action)
@@ -189,7 +189,7 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
     set_first(
         field_remover,
         [
-            "/measurements", "/dq_score", "/dq_status", "/dq_checked_at",
+            "/measurements", "/quality_score", "/quality_issues",
             "/classify_response", "/quarantine_response", "/defect_codes",
         ],
         "fields",

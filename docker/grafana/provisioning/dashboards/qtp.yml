@@ -1,0 +1,14 @@
+# Auto-provisioned dashboard provider — loads every dashboard JSON in this folder on start.
+apiVersion: 1
+
+providers:
+  - name: QTP
+    orgId: 1
+    folder: QTP
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

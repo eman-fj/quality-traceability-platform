@@ -1,0 +1,28 @@
+# Auto-provisioned Grafana datasources for QTP (loaded on container start).
+# Postgres = the quality warehouse (business/quality metrics); Prometheus = pipeline-health
+# metrics. In-network hostnames/ports (Grafana runs inside the qtp docker network).
+apiVersion: 1
+
+datasources:
+  - name: QTP Warehouse (Postgres)
+    uid: qtp-postgres
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    user: ${POSTGRES_USER}
+    jsonData:
+      database: ${POSTGRES_DB}
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: false
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}
+    isDefault: true
+    editable: true
+
+  - name: QTP Metrics (Prometheus)
+    uid: qtp-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    editable: true

@@ -195,8 +195,13 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Passed through to the auto-provisioned Postgres datasource (docker/grafana/provisioning).
+      POSTGRES_USER: ${POSTGRES_USER:-qtp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qtp_pw}
+      POSTGRES_DB: ${POSTGRES_DB:-quality}
     volumes:
       - qtp-grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
     networks: [qtp]
 
   # ---------------------------------------------------------------- Inspection event simulator

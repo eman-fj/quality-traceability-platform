@@ -4,7 +4,8 @@ Stage A — Ingest + enrich + route:
 
     Kafka (quality.inspections)
         -> kafka_header_enricher   (standard metadata headers)
-        -> data_quality_tagger     (dq_score / dq_status)
+        -> data_quality_tagger     (quality_score / quality_issues — reused teammate Jython fragment;
+                                     below-threshold records routed to error -> DLQ)
         -> schema_version_tagger   (schema_version on every record - ISO audit)
         -> Stream Selector
              -> defect lane : Kafka Producer (quality.defects.major)   [enrich in defect_enrichment]
@@ -83,7 +84,9 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
     # --- Stage A: clean lane — strip non-column fields, then write to Postgres --------
     # The JDBC Producer auto-maps every record field to a same-named column. Drop the
     # fields conforming_parts can't take:
-    #   - defect_codes / dq_score / dq_status / dq_checked_at : no such columns
+    #   - defect_codes / quality_score / quality_issues : no such columns
+    #     (quality_score float + quality_issues LIST are emitted by the reused
+    #      data_quality_tagger fragment; the list would break the insert like defect_codes)
     #   - measurements : a nested JSON object; the JDBC Producer can't coerce a MAP into
     #     a scalar/JSONB column (it would fail like the timestamp did)
     # The remaining fields map 1:1 to the table (part_id, line_id, inspection_timestamp,
@@ -91,7 +94,7 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
     field_remover = builder.add_stage("Field Remover")
     set_first(
         field_remover,
-        ["/defect_codes", "/dq_score", "/dq_status", "/dq_checked_at", "/measurements"],
+        ["/defect_codes", "/quality_score", "/quality_issues", "/measurements"],
         "fields",
     )
     set_config(field_remover, action="REMOVE")
@@ -191,5 +194,11 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         "SOURCE_SYSTEM":   "manufacturing",
         "ENVIRONMENT":     "dev",
         "SCHEMA_VERSION":  "1",
+        # data_quality_tagger (reused Jython fragment): the identity/traceability fields
+        # every part must carry. A record missing any of these scores below threshold and is
+        # routed to the DLQ — an ISO-9001-meaningful data-quality gate. Threshold 0.8 lets a
+        # record miss at most one of six fields before it is quarantined.
+        "DQ_REQUIRED_FIELDS":   "part_id,line_id,inspection_timestamp,material_batch_id,operator_id,shift",
+        "DQ_QUALITY_THRESHOLD": "0.8",
     }
     return pipeline

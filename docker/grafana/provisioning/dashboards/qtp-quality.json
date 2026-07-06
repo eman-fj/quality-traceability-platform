@@ -1,0 +1,86 @@
+{
+  "uid": "qtp-quality",
+  "title": "QTP — Manufacturing Quality Command Centre",
+  "tags": ["qtp", "manufacturing", "iso9001"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30d", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Total parts inspected",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "blue" }, "unit": "short" }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "refId": "A", "format": "table", "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+        "rawSql": "SELECT (SELECT count(*) FROM quality.conforming_parts) + (SELECT count(*) FROM quality.defective_parts) AS \"Total inspected\"" } ]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Conforming rate",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 95 }, { "color": "green", "value": 98 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "refId": "A", "format": "table", "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+        "rawSql": "SELECT round(100.0 * (SELECT count(*) FROM quality.conforming_parts) / NULLIF((SELECT count(*) FROM quality.conforming_parts) + (SELECT count(*) FROM quality.defective_parts), 0), 2) AS \"Conforming rate\"" } ]
+    },
+    {
+      "id": 3, "type": "stat", "title": "CRITICAL defects today",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "refId": "A", "format": "table", "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+        "rawSql": "SELECT count(*)::int AS \"CRITICAL today\" FROM quality.defective_parts WHERE defect_category = 'CRITICAL' AND inspection_timestamp::timestamptz::date = current_date" } ]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Parts in quarantine",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "purple" }, "unit": "short" }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "refId": "A", "format": "table", "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+        "rawSql": "SELECT count(*)::int AS \"In quarantine\" FROM quality.quarantine_log" } ]
+    },
+    {
+      "id": 5, "type": "bargauge", "title": "Defect rate per production line (ISO ceiling 2%)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 6, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 2 } ] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "refId": "A", "format": "table", "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+        "rawSql": "WITH r AS (SELECT line_id, 0 d FROM quality.conforming_parts UNION ALL SELECT line_id, 1 FROM quality.defective_parts) SELECT line_id AS metric, round(100.0 * sum(d) / NULLIF(count(*), 0), 2) AS \"Defect rate\" FROM r GROUP BY line_id ORDER BY line_id" } ]
+    },
+    {
+      "id": 6, "type": "bargauge", "title": "Top defect codes — this shift",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "continuous-YlRd" } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "refId": "A", "format": "table", "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+        "rawSql": "SELECT code AS metric, count(*)::int AS value FROM quality.defective_parts, jsonb_array_elements_text(defect_codes) AS code WHERE inspection_timestamp::timestamptz::date = current_date AND shift = (CASE WHEN extract(hour FROM now()) BETWEEN 6 AND 13 THEN 'A' WHEN extract(hour FROM now()) BETWEEN 14 AND 21 THEN 'B' ELSE 'C' END) GROUP BY code ORDER BY value DESC LIMIT 3" } ]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Defects over time, per line",
+      "gridPos": { "h": 9, "w": 14, "x": 0, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "refId": "A", "format": "time_series", "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+        "rawSql": "SELECT $__timeGroupAlias(inspection_timestamp::timestamptz, '1h') AS time, line_id AS metric, count(*)::int AS defects FROM quality.defective_parts WHERE $__timeFilter(inspection_timestamp::timestamptz) GROUP BY 1, line_id ORDER BY 1" } ]
+    },
+    {
+      "id": 8, "type": "table", "title": "Supplier defect correlation (top 5)",
+      "gridPos": { "h": 9, "w": 10, "x": 14, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+      "fieldConfig": { "defaults": { "custom": { "align": "auto" } }, "overrides": [] },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [ { "refId": "A", "format": "table", "datasource": { "type": "postgres", "uid": "qtp-postgres" },
+        "rawSql": "SELECT supplier_name AS \"Supplier\", supplier_id AS \"ID\", material_grade AS \"Grade\", count(*)::int AS \"Defects\" FROM quality.defective_parts WHERE supplier_id IS NOT NULL GROUP BY supplier_name, supplier_id, material_grade ORDER BY \"Defects\" DESC LIMIT 5" } ]
+    }
+  ]
+}
