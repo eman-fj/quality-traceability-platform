@@ -40,12 +40,51 @@ LABELS = ["industry:manufacturing", "env:dev"]
 
 INLINE_FRAGMENTS = ["kafka_header_enricher", "data_quality_tagger", "schema_version_tagger"]
 
-# Throttle window for the Teams/Jira alert lanes (see the Record Deduplicator stages in
-# build()): at most one real alert per (line_id, defect_category) per window; repeats
-# within it are suppressed (trashed) rather than paging Teams/Jira again.
-ALERT_THROTTLE_WINDOW_SECS = 300
+# Rollup window for the Teams/Jira alert lanes (see the rollup-gate JavaScript stages in
+# build()): the first CRITICAL/MAJOR defect for a given (line_id, severity) fires one real
+# alert immediately; further defects for that same key inside the window are counted, not
+# paged, and their running total is reported on the NEXT alert ("+N more since the last
+# alert"). This caps the outbound Teams/Jira call rate — the fix for the Power Automate
+# connector action-limit and the Jira flood — while preserving the suppressed count, unlike
+# a plain dedup-and-drop. The audit sink (WireMock dispatcher) and the Postgres
+# quarantine/defective_parts spine still record 100% of defects regardless.
+ALERT_ROLLUP_WINDOW_SECS = 300
 
 log = get_logger()
+
+# Stateful rollup gate (shared by the CRITICAL and MAJOR lanes; each stage instance keeps
+# its own `state`, which the SDC JavaScript Evaluator persists across batches for the run).
+# For each (line_id, defect_category) key it opens a time window: the first record of a
+# window is flagged /alert_emit='true' and carries /rolled_up_count = however many were
+# suppressed in the PREVIOUS window (0 on the very first). Every later record inside the
+# open window is flagged /alert_emit='false' and increments that window's counter. A
+# downstream Stream Selector routes 'true' to the real Teams/Jira delivery and everything
+# else to Trash. Processing-time (wall-clock) windows are the right basis for rate-limiting
+# outbound notifications. %WINDOW_MS% is substituted from ALERT_ROLLUP_WINDOW_SECS.
+_ROLLUP_GATE_SCRIPT = """
+if (!state.win) { state.win = {}; }
+var WINDOW_MS = %WINDOW_MS%;
+for (var i = 0; i < records.length; i++) {
+  var r = records[i];
+  try {
+    var key = r.value['line_id'] + '|' + r.value['defect_category'];
+    var now = new Date().getTime();
+    var w = state.win[key];
+    if (!w || (now - w.start) >= WINDOW_MS) {
+      r.value['alert_emit'] = 'true';
+      r.value['rolled_up_count'] = w ? w.suppressed : 0;
+      state.win[key] = { start: now, suppressed: 0 };
+    } else {
+      w.suppressed = w.suppressed + 1;
+      r.value['alert_emit'] = 'false';
+      r.value['rolled_up_count'] = 0;
+    }
+    output.write(r);
+  } catch (e) {
+    error.write(r, 'rollup gate error: ' + e);
+  }
+}
+"""
 
 # Builds the Jira Cloud REST v3 "create issue" payload for a CRITICAL defect. Jira's
 # `description` field requires Atlassian Document Format (a nested doc/paragraph/text
@@ -64,10 +103,16 @@ for (var i = 0; i < records.length; i++) {
     var supplier  = r.value['supplier_name'];
     var ts        = r.value['inspection_timestamp'];
 
+    var rolled    = r.value['rolled_up_count'];
+
     var summary = 'CRITICAL quality defect: part ' + partId + ' on ' + lineId;
     var detail  = 'Part ' + partId + ' on line ' + lineId + ' failed inspection at ' + ts +
                   ' with defect code(s) ' + codes +
                   '. Supplier: ' + supplier + '. Category: ' + category + '.';
+    if (rolled && rolled > 0) {
+      detail += ' Rolled up: ' + rolled + ' further CRITICAL defect(s) on ' + lineId +
+                ' occurred since the last alert and are represented by this ticket.';
+    }
 
     r.value['jira_payload'] = JSON.stringify({
       fields: {
@@ -99,6 +144,23 @@ for (var i = 0; i < records.length; i++) {
     var r = records[i];
     var sev = '${SEVERITY_LABEL}';
     var title = sev + ' quality defect - part ' + r.value['part_id'];
+    var rolled = r.value['rolled_up_count'];
+    var body = [
+      { type: 'TextBlock', size: 'Large', weight: 'Bolder', color: (sev === 'CRITICAL' ? 'Attention' : 'Warning'), text: title },
+      { type: 'FactSet', facts: [
+        { title: 'Part', value: '' + r.value['part_id'] },
+        { title: 'Line', value: '' + r.value['line_id'] },
+        { title: 'Category', value: '' + r.value['defect_category'] },
+        { title: 'Defect codes', value: '' + r.value['defect_codes_str'] },
+        { title: 'Supplier', value: '' + r.value['supplier_name'] },
+        { title: 'Detected', value: '' + r.value['inspection_timestamp'] }
+      ]}
+    ];
+    if (rolled && rolled > 0) {
+      body.push({ type: 'TextBlock', wrap: true, isSubtle: true, spacing: 'Medium',
+        text: '+ ' + rolled + ' more ' + sev + ' defect(s) on ' + r.value['line_id'] +
+              ' since the last alert (rolled up, not individually paged).' });
+    }
     r.value['teams_card'] = JSON.stringify({
       type: 'message',
       attachments: [{
@@ -107,17 +169,7 @@ for (var i = 0; i < records.length; i++) {
           '$schema': 'http://adaptivecards.io/schemas/adaptive-card.json',
           type: 'AdaptiveCard',
           version: '1.4',
-          body: [
-            { type: 'TextBlock', size: 'Large', weight: 'Bolder', color: (sev === 'CRITICAL' ? 'Attention' : 'Warning'), text: title },
-            { type: 'FactSet', facts: [
-              { title: 'Part', value: '' + r.value['part_id'] },
-              { title: 'Line', value: '' + r.value['line_id'] },
-              { title: 'Category', value: '' + r.value['defect_category'] },
-              { title: 'Defect codes', value: '' + r.value['defect_codes_str'] },
-              { title: 'Supplier', value: '' + r.value['supplier_name'] },
-              { title: 'Detected', value: '' + r.value['inspection_timestamp'] }
-            ]}
-          ]
+          body: body
         }
       }]
     });
@@ -315,35 +367,29 @@ for (var i = 0; i < records.length; i++) {
     )
     jira_trash = builder.add_stage("Trash")  # absorb the Jira API response; nothing downstream needs it
 
-    # --- Alert throttle: protect Teams/Jira from a hot line paging on every record ----
-    # A line producing CRITICAL/MAJOR defects back-to-back was posting a Teams card +
-    # Jira ticket per record, which is what triggered Power Automate's own throttling
-    # ("Your operation has been throttled" — an action-limit on the connector) and a
-    # 28-ticket-per-hour Jira flood. The audit trail (WireMock dispatcher fragment,
-    # Postgres quarantine/defective_parts) still records every single defect — nothing
-    # is dropped from compliance data. Only the human/external-facing Teams card + Jira
-    # ticket are throttled: at most one per (line_id, defect_category) per
-    # ALERT_THROTTLE_WINDOW_SECS; repeats within the window go to the duplicate lane
-    # (trashed, not error — a suppressed alert is not a pipeline failure).
-    critical_throttle = builder.add_stage("Record Deduplicator")
-    set_config(
-        critical_throttle,
-        compare="SPECIFIED_FIELDS",
-        fields_to_compare=["/line_id", "/defect_category"],
-        time_to_compare_in_secs=ALERT_THROTTLE_WINDOW_SECS,
-        max_records_to_compare=100000,
-    )
-    critical_throttle_trash = builder.add_stage("Trash")
+    # --- Alert rollup gate: protect Teams/Jira from a hot line paging on every record --
+    # A line producing CRITICAL/MAJOR defects back-to-back was posting a Teams card + Jira
+    # ticket per record, which tripped Power Automate's own connector action-limit ("Your
+    # operation has been throttled") and flooded Jira. Each severity lane runs the stateful
+    # _ROLLUP_GATE_SCRIPT: the first defect of a (line_id, severity) window fires one alert
+    # carrying the count suppressed since the previous alert; later defects in the window are
+    # counted, not paged. A 2-lane Stream Selector then routes /alert_emit=='true' to the
+    # real Teams/Jira delivery and the rest to Trash (suppressed, NOT an error). The audit
+    # sink (alert_frag) and the Postgres spine still see 100% of defects — only the outbound
+    # notification rate is capped; the suppressed count is preserved on the next alert.
+    _gate_script = _ROLLUP_GATE_SCRIPT.replace("%WINDOW_MS%", str(ALERT_ROLLUP_WINDOW_SECS * 1000))
 
-    major_throttle = builder.add_stage("Record Deduplicator")
-    set_config(
-        major_throttle,
-        compare="SPECIFIED_FIELDS",
-        fields_to_compare=["/line_id", "/defect_category"],
-        time_to_compare_in_secs=ALERT_THROTTLE_WINDOW_SECS,
-        max_records_to_compare=100000,
-    )
-    major_throttle_trash = builder.add_stage("Trash")
+    critical_gate = builder.add_stage("JavaScript Evaluator")
+    critical_gate.script = _gate_script
+    critical_gate_selector = builder.add_stage("Stream Selector")
+    critical_gate_selector.predicates = ["${record:value('/alert_emit') == 'true'}", "default"]
+    critical_gate_trash = builder.add_stage("Trash")
+
+    major_gate = builder.add_stage("JavaScript Evaluator")
+    major_gate.script = _gate_script
+    major_gate_selector = builder.add_stage("Stream Selector")
+    major_gate_selector.predicates = ["${record:value('/alert_emit') == 'true'}", "default"]
+    major_gate_trash = builder.add_stage("Trash")
 
     # --- MAJOR lane: severity=WARN + Teams card ----------------------------------------
     major_shaper = builder.add_stage("JavaScript Evaluator")
@@ -483,20 +529,22 @@ for (var i = 0; i < records.length; i++) {
     codes_join >> quarantine >> quarantine_ee >> field_remover >> defect_out
     # Fan-out: severity-routed alerting in parallel (broadcast — same records).
     codes_join >> alert_selector
-    # lane 0 CRITICAL: build Teams card -> add severity/Jira meta -> audit (unthrottled) +
-    # throttled fan-out to Teams/Jira (unique lane -> real delivery, duplicate lane -> trash)
-    alert_selector >> critical_shaper >> critical_meta
-    critical_meta >> alert_frag                               # audit sink (WireMock, every defect)
-    critical_meta >> critical_throttle
-    critical_throttle >> teams_http >> teams_trash            # unique lane: real Teams Adaptive Card
-    critical_throttle >> jira_shaper >> jira_http >> jira_trash  # unique lane: real Jira ticket
-    critical_throttle >> critical_throttle_trash              # duplicate lane: suppressed, not an error
-    # lane 1 MAJOR: build Teams card -> add severity -> audit (unthrottled) + throttled Teams
-    alert_selector >> major_shaper >> major_meta
+    # lane 0 CRITICAL: set severity/timestamp -> audit EVERY defect -> rollup gate; the
+    # gate's emit lane builds the Teams card + Jira payload (with the rolled-up count) and
+    # fans out to both HTTP clients, its suppress lane goes to Trash.
+    alert_selector >> critical_meta
+    critical_meta >> alert_frag                               # audit sink (WireMock, every CRITICAL)
+    critical_meta >> critical_gate >> critical_gate_selector
+    critical_gate_selector >> critical_shaper >> jira_shaper  # emit lane: build both payloads in sequence
+    jira_shaper >> teams_http >> teams_trash                  # real Teams Adaptive Card
+    jira_shaper >> jira_http >> jira_trash                    # real Jira ticket
+    critical_gate_selector >> critical_gate_trash             # suppress lane: counted, not paged
+    # lane 1 MAJOR: set severity=WARN -> audit EVERY defect -> rollup gate -> Teams only.
+    alert_selector >> major_meta
     major_meta >> alert_frag
-    major_meta >> major_throttle
-    major_throttle >> teams_http                              # unique lane: merges into the same Teams stage
-    major_throttle >> major_throttle_trash                    # duplicate lane: suppressed, not an error
+    major_meta >> major_gate >> major_gate_selector
+    major_gate_selector >> major_shaper >> teams_http         # emit lane: merges into the shared Teams stage
+    major_gate_selector >> major_gate_trash                   # suppress lane: counted, not paged
     # lane 2 MINOR (default): informational email
     alert_selector >> minor_email
     if line_filter is not None:
