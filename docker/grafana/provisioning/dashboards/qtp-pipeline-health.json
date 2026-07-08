@@ -1,0 +1,95 @@
+{
+  "uid": "qtp-pipeline-health",
+  "title": "QTP — Pipeline Health (Prometheus)",
+  "tags": ["qtp", "operational", "prometheus"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "quality_ingest job",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+      "fieldConfig": { "defaults": { "mappings": [
+        { "type": "value", "options": { "0": { "text": "INACTIVE", "color": "red" }, "1": { "text": "ACTIVE", "color": "green" } } }
+      ] }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+        "expr": "qtp_job_up{job_name=\"manufacturing__job__quality_ingest\"}", "instant": true } ]
+    },
+    {
+      "id": 2, "type": "stat", "title": "defect_enrichment job",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+      "fieldConfig": { "defaults": { "mappings": [
+        { "type": "value", "options": { "0": { "text": "INACTIVE", "color": "red" }, "1": { "text": "ACTIVE", "color": "green" } } }
+      ] }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+        "expr": "qtp_job_up{job_name=\"manufacturing__job__defect_enrichment\"}", "instant": true } ]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Alerts fired (total)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "orange" } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+        "expr": "sum(qtp_alerts_fired_total)", "instant": true } ]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Jira tickets created",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "purple" } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+        "expr": "qtp_jira_tickets_created_total", "instant": true } ]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Records processed per job (latest run)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 40 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+          "expr": "qtp_job_input_records", "legendFormat": "{{job_name}} - input" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+          "expr": "qtp_job_output_records", "legendFormat": "{{job_name}} - output" }
+      ]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Error rate per job (latest run)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 15 },
+        "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.05 } ] } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+        "expr": "qtp_job_error_rate", "legendFormat": "{{job_name}}" } ]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Latest run duration (seconds)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "bars", "fillOpacity": 40 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+        "expr": "qtp_job_last_run_duration_seconds", "legendFormat": "{{job_name}}" } ]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Alert history, by severity",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 40, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "qtp-prometheus" },
+        "expr": "qtp_alerts_fired_total", "legendFormat": "{{severity}}" } ]
+    }
+  ]
+}

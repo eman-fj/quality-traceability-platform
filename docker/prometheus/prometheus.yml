@@ -1,6 +1,4 @@
 # QTP Prometheus scrape config.
-# Scrapes Prometheus itself today; the StreamSets/SDC metrics job is a placeholder
-# to be pointed at the data collector's Prometheus endpoint once pipelines run.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -10,8 +8,16 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # Placeholder — enable once the StreamSets Data Collector exposes metrics.
-  # - job_name: streamsets
-  #   metrics_path: /metrics
-  #   static_configs:
-  #     - targets: ["host.docker.internal:18630"]
+  # Real StreamSets job metrics (records processed, error rate, run duration), via the
+  # qtp-metrics exporter (qtp/metrics/exporter.py). A longer scrape interval than the
+  # default 15s: each scrape makes live Control Hub API calls per job, so this avoids
+  # hammering Control Hub every 15 seconds.
+  - job_name: qtp-pipelines
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["qtp-metrics:9091"]
+
+  # The SDC engine's own /metrics is registered with Control Hub via DPM (dpm.enabled=true
+  # in its sdc.properties), so it redirects unauthenticated scrapes to a login page — there
+  # is no local username/password to configure here. qtp-pipelines (above) reaches the same
+  # real per-job metrics through the authenticated Control Hub API instead.

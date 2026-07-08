@@ -88,6 +88,44 @@ def status(flows=None) -> int:
     return 0
 
 
+# Flows whose pipeline declares the real-alerting parameters (Teams/Jira). Only these get
+# job_runtime_secrets() injected — other flows' pipelines don't declare those parameter
+# names, and Control Hub jobs only accept runtime_parameters that match a declared name.
+_FLOWS_WITH_ALERT_SECRETS = {"defect_enrichment"}
+
+
+def _runtime_parameters_for(flow: str) -> dict:
+    """Real secrets to inject as JOB runtime parameters (never baked into the pipeline).
+
+    See qtp/common/env.py:job_runtime_secrets() and the comment above
+    manufacturing__defect_enrichment's alert_selector for why this must happen at job
+    creation time, not pipeline build time.
+    """
+    if flow not in _FLOWS_WITH_ALERT_SECRETS:
+        return {}
+    from ..common.env import job_runtime_secrets
+
+    secrets = job_runtime_secrets()
+    teams_url = secrets["TEAMS_ALERT_WEBHOOK_URL"]
+    if not teams_url:
+        log.warning("TEAMS_ALERT_WEBHOOK_URL is not set in .env - job will use the "
+                    "WireMock placeholder for Teams alerts, not a real webhook.")
+    if not secrets["JIRA_API_TOKEN"]:
+        log.warning("JIRA_API_TOKEN is not set in .env - job will use the WireMock "
+                    "placeholder for Jira, not real ticket creation.")
+    # The dispatcher (alert_01_MAINTENANCE_API_URL) intentionally stays on its WireMock
+    # default — it's the audit sink. The REAL Teams webhook goes to the dedicated Teams
+    # HTTP Client's TEAMS_ALERT_WEBHOOK_URL parameter.
+    return {
+        "TEAMS_ALERT_WEBHOOK_URL": teams_url or "http://wiremock:8080/alerts",
+        "JIRA_BASE_URL":    secrets["JIRA_BASE_URL"] or "http://wiremock:8080",
+        "JIRA_USER_EMAIL":  secrets["JIRA_USER_EMAIL"],
+        "JIRA_API_TOKEN":   secrets["JIRA_API_TOKEN"],
+        "JIRA_PROJECT_KEY": secrets["JIRA_PROJECT_KEY"],
+        "JIRA_ISSUE_TYPE":  secrets["JIRA_ISSUE_TYPE"],
+    }
+
+
 def create(flows=None, start=False, wait=False) -> int:
     """Create any missing jobs from their published pipelines (idempotent)."""
     sch = get_control_hub()
@@ -100,7 +138,9 @@ def create(flows=None, start=False, wait=False) -> int:
             continue
         pipeline = _resolve_pipeline(sch, pipeline_name(flow))
         builder = sch.get_job_builder()
-        job = builder.build(jname, pipeline, tags=list(JOB_TAGS))
+        runtime_parameters = _runtime_parameters_for(flow)
+        job = builder.build(jname, pipeline, tags=list(JOB_TAGS),
+                            runtime_parameters=runtime_parameters or None)
         sch.add_job(job)
         created.append(jname)
         log.info("Created job '%s' from pipeline '%s'.", jname, pipeline_name(flow))
@@ -150,6 +190,42 @@ def start(flows=None, wait=False, create_missing=True) -> int:
                 sch.add_job(job)
                 log.info("Created missing job '%s'.", job_name(flow))
     return _start(sch, flows, wait=wait)
+
+
+def update_parameters(flows=None, restart=False) -> int:
+    """Re-inject fresh .env secrets into an EXISTING job's runtime_parameters.
+
+    `create()` only sets runtime_parameters at first creation and skips jobs that already
+    exist, so a changed secret (webhook URL, Jira token/base URL) never reaches a running
+    job otherwise. Confirmed SDK API: ``job.runtime_parameters = {...}`` (setter) then
+    ``sch.update_job(job)``. Only flows in _FLOWS_WITH_ALERT_SECRETS get anything pushed.
+    """
+    sch = get_control_hub()
+    updated, skipped = [], []
+    for flow in (flows or DEFAULT_FLOWS):
+        jname = job_name(flow)
+        job = _find_job(sch, jname)
+        if job is None:
+            log.warning("Job '%s' not found — nothing to update.", jname)
+            continue
+        runtime_parameters = _runtime_parameters_for(flow)
+        if not runtime_parameters:
+            skipped.append(jname)
+            continue
+        was_active = _is_active(job)
+        if was_active:
+            sch.stop_job(job)
+        job.runtime_parameters = runtime_parameters
+        sch.update_job(job)
+        updated.append(jname)
+        log.info("Updated runtime parameters for job '%s'.", jname)
+        if restart and was_active:
+            sch.start_job(job)
+            log.info("Restarted job '%s'.", jname)
+
+    log.info("Jobs updated: %d, skipped (no alert secrets declared): %d.",
+              len(updated), len(skipped))
+    return 0
 
 
 def stop(flows=None, force=False) -> int:

@@ -17,6 +17,7 @@ Connections/credentials are runtime parameters; the MinIO endpoint is the TLS en
 engine needs an explicit schema, set it in the canvas.
 """
 
+from ..common.connections import apply_connection
 from ..common.fragments import resolve_fragment
 from ..common.util import get_logger, set_config, set_first
 
@@ -37,6 +38,7 @@ def build(sch, engine_id, name=None):
         data_format="JSON",
         broker_uri="${KAFKA_BROKER}",
     )
+    apply_connection(origin, sch, "manufacturing__kafka__dev")
 
     # Keep only conforming parts (no defect code); route defects to Trash.
     selector = builder.add_stage("Stream Selector")
@@ -61,6 +63,7 @@ def build(sch, engine_id, name=None):
         signing_region_for_s3="US_EAST_1",
         use_path_style_address_model=True,
     )
+    apply_connection(archive, sch, "manufacturing__minio__dev")
 
     # Drop fields Avro/Parquet schema inference can't handle: defect_codes is an empty
     # list on clean parts (no element type to infer), and measurements is a nested map.

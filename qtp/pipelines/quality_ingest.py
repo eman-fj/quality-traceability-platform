@@ -4,8 +4,7 @@ Stage A — Ingest + enrich + route:
 
     Kafka (quality.inspections)
         -> kafka_header_enricher   (standard metadata headers)
-        -> data_quality_tagger     (quality_score / quality_issues — reused teammate Jython fragment;
-                                     below-threshold records routed to error -> DLQ)
+        -> data_quality_tagger     (dq_score / dq_status)
         -> schema_version_tagger   (schema_version on every record - ISO audit)
         -> Stream Selector
              -> defect lane : Kafka Producer (quality.defects.major)   [enrich in defect_enrichment]
@@ -25,6 +24,7 @@ The dead_letter_queue_handler fragment stamps dlq_* fields on error records in t
 recovery pipeline that reads from kermit-error-dlq; it is not needed here.
 """
 
+from ..common.connections import apply_connection
 from ..common.fragments import resolve_fragment
 from ..common.util import get_logger, set_config, set_first
 
@@ -54,8 +54,11 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         topic_list=["quality.inspections"],
         consumer_group=group,
         data_format="JSON",
-        broker_uri="${KAFKA_BROKER}",
+        broker_uri="${KAFKA_BROKER}",  # ignored once a named connection is applied below
     )
+    # Master §9.2: prefer a Control Hub named Connection over the manual broker_uri param
+    # (created via `qtp connections create`); falls back to broker_uri if it doesn't exist.
+    apply_connection(origin, sch, "manufacturing__kafka__dev")
     # Dedicated per-line pipeline: a Stream Selector right after the origin keeps only this
     # line's records (lane 0) and discards the rest (lane 1 -> Trash). The Kafka origin has
     # no record-precondition config, so a selector is the reliable per-line filter.
@@ -80,13 +83,12 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
     # --- Stage A: defect lane — publish to defects topic (enriched by defect_enrichment)
     defect_out = builder.add_stage("Kafka Producer")
     set_config(defect_out, topic="quality.defects.major", data_format="JSON", broker_uri="${KAFKA_BROKER}")
+    apply_connection(defect_out, sch, "manufacturing__kafka__dev")
 
     # --- Stage A: clean lane — strip non-column fields, then write to Postgres --------
     # The JDBC Producer auto-maps every record field to a same-named column. Drop the
     # fields conforming_parts can't take:
-    #   - defect_codes / quality_score / quality_issues : no such columns
-    #     (quality_score float + quality_issues LIST are emitted by the reused
-    #      data_quality_tagger fragment; the list would break the insert like defect_codes)
+    #   - defect_codes / dq_score / dq_status / dq_checked_at : no such columns
     #   - measurements : a nested JSON object; the JDBC Producer can't coerce a MAP into
     #     a scalar/JSONB column (it would fail like the timestamp did)
     # The remaining fields map 1:1 to the table (part_id, line_id, inspection_timestamp,
@@ -94,7 +96,7 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
     field_remover = builder.add_stage("Field Remover")
     set_first(
         field_remover,
-        ["/defect_codes", "/quality_score", "/quality_issues", "/measurements"],
+        ["/defect_codes", "/dq_score", "/dq_status", "/dq_checked_at", "/measurements"],
         "fields",
     )
     set_config(field_remover, action="REMOVE")
@@ -109,6 +111,7 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         username="${PG_USER}",
         password="${PG_PASSWORD}",
     )
+    apply_connection(clean_out, sch, "manufacturing__postgres__dev")
 
     # --- Stage B: DLQ error stage → MinIO kermit-error-dlq --------------------------
     # Label confirmed from canvas Error Records dropdown: "Write to Amazon S3".
@@ -130,6 +133,13 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         signing_region_for_s3="US_EAST_1",
         use_path_style_address_model=True,
     )
+    # This error-stage variant ("ToErrorAmazonS3DTarget") reports supported_connection_types
+    # as None — unlike the regular "Amazon S3" destination/origin, which both support
+    # STREAMSETS_AWS_S3 — but the `.connection` attribute exists and accepts a value. Attempt
+    # it anyway; `qtp pipelines validate` after rebuild is the real test of whether the
+    # engine accepts it. If validation rejects it, this line is the one to revert (falls back
+    # to the MANUAL params above, which keep working either way).
+    apply_connection(dlq, sch, "manufacturing__minio__dev", fallback_note="error-stage variant may not support connections")
 
     # --- Stage B: audit stop event (PENDING — lifecycle label needs canvas verification) --
     # add_stop_event_stage() requires pipelineLifecycleStage=True in the engine's stage
@@ -179,7 +189,11 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
     # Runtime parameters: docker-stack defaults (qtp_qtp network hostnames).
     # Fragment params (SOURCE_SYSTEM / ENVIRONMENT / SCHEMA_VERSION) feed the inline
     # enrichment fragments. Audit params feed the stop event writer (pending label fix).
-    pipeline.parameters = {
+    # NOTE: must be .update(), not `=` — add_fragment() has already promoted each
+    # fragment's own prefixed parameters (e.g. kafka_01_KAFKA_SOURCE_SYSTEM,
+    # schem_01_SCHEMA_VERSION) onto pipeline.parameters; a plain assignment here wipes
+    # them out, leaving every enrichment EL expression unresolved (EXPR_03 on every record).
+    pipeline.parameters.update({
         "KAFKA_BROKER":    "kafka:29092",
         "PG_JDBC_URL":     "jdbc:postgresql://postgres:5432/quality",
         "PG_USER":         "qtp",
@@ -194,11 +208,5 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         "SOURCE_SYSTEM":   "manufacturing",
         "ENVIRONMENT":     "dev",
         "SCHEMA_VERSION":  "1",
-        # data_quality_tagger (reused Jython fragment): the identity/traceability fields
-        # every part must carry. A record missing any of these scores below threshold and is
-        # routed to the DLQ — an ISO-9001-meaningful data-quality gate. Threshold 0.8 lets a
-        # record miss at most one of six fields before it is quarantined.
-        "DQ_REQUIRED_FIELDS":   "part_id,line_id,inspection_timestamp,material_batch_id,operator_id,shift",
-        "DQ_QUALITY_THRESHOLD": "0.8",
-    }
+    })
     return pipeline

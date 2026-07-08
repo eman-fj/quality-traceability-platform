@@ -204,6 +204,22 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
     networks: [qtp]
 
+  # ---------------------------------------------------------------- QTP metrics exporter
+  # Real StreamSets job metrics (records processed, error rate, run duration) for Prometheus,
+  # pulled through the Control Hub SDK session — see qtp/metrics/exporter.py for why this
+  # goes through Control Hub rather than the engine's own (DPM/SSO-protected) metrics API.
+  qtp-metrics:
+    build: .
+    container_name: qtp-metrics
+    command: ["metrics", "serve", "--port", "9091"]
+    env_file: [.env]
+    environment:
+      WIREMOCK_BASE_URL: http://wiremock:8080
+    ports:
+      - "${QTP_METRICS_PORT:-9091}:9091"
+    restart: unless-stopped
+    networks: [qtp]
+
   # ---------------------------------------------------------------- Inspection event simulator
   simulator:
     build: ./simulator

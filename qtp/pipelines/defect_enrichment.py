@@ -5,7 +5,7 @@ and write to the defective-parts warehouse. Feeds from the quality_ingest defect
 
     Kafka (quality.defects.major)
         -> kafka_header_enricher    (standard metadata headers)
-        -> data_quality_tagger      (quality_score / quality_issues — reused teammate Jython fragment, upstream)
+        -> data_quality_tagger      (dq_score / dq_status)
         -> schema_version_tagger    (schema_version - ISO audit)
         -> JDBC Lookup              (MySQL ERP: batch → supplier + grade + certificate)
         -> HTTP Client classify     (POST /defects/classify → defect_category, recommended_action)
@@ -31,6 +31,7 @@ JDBC Lookup assumes the MySQL driver (mariadb or mysql) is installed in the SDC.
 WireMock endpoints are internal network hostnames (wiremock:8080).
 """
 
+from ..common.connections import apply_connection
 from ..common.fragments import resolve_fragment
 from ..common.util import get_logger, set_config, set_first
 
@@ -39,7 +40,93 @@ LABELS = ["industry:manufacturing", "env:dev"]
 
 INLINE_FRAGMENTS = ["kafka_header_enricher", "data_quality_tagger", "schema_version_tagger"]
 
+# Throttle window for the Teams/Jira alert lanes (see the Record Deduplicator stages in
+# build()): at most one real alert per (line_id, defect_category) per window; repeats
+# within it are suppressed (trashed) rather than paging Teams/Jira again.
+ALERT_THROTTLE_WINDOW_SECS = 300
+
 log = get_logger()
+
+# Builds the Jira Cloud REST v3 "create issue" payload for a CRITICAL defect. Jira's
+# `description` field requires Atlassian Document Format (a nested doc/paragraph/text
+# structure) — not a plain string — so this is built in JavaScript rather than via
+# Expression Evaluator field paths, which is far more reliable for nested JSON. ${...}
+# parameter substitution in the script text mirrors the already-working pattern in the
+# reused alert_notification_dispatcher fragment's own JavaScript stage.
+_JIRA_PAYLOAD_SCRIPT = """
+for (var i = 0; i < records.length; i++) {
+  try {
+    var r = records[i];
+    var partId    = r.value['part_id'];
+    var lineId    = r.value['line_id'];
+    var category  = r.value['defect_category'];
+    var codes     = r.value['defect_codes_str'];
+    var supplier  = r.value['supplier_name'];
+    var ts        = r.value['inspection_timestamp'];
+
+    var summary = 'CRITICAL quality defect: part ' + partId + ' on ' + lineId;
+    var detail  = 'Part ' + partId + ' on line ' + lineId + ' failed inspection at ' + ts +
+                  ' with defect code(s) ' + codes +
+                  '. Supplier: ' + supplier + '. Category: ' + category + '.';
+
+    r.value['jira_payload'] = JSON.stringify({
+      fields: {
+        project: { key: '${JIRA_PROJECT_KEY}' },
+        issuetype: { name: '${JIRA_ISSUE_TYPE}' },
+        summary: summary,
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [ { type: 'paragraph', content: [ { type: 'text', text: detail } ] } ]
+        }
+      }
+    });
+    output.write(r);
+  } catch (e) {
+    error.write(records[i], 'jira payload build error: ' + e);
+  }
+}
+"""
+
+# Builds a Microsoft Teams message payload. A Teams webhook (whether classic "Incoming
+# Webhook" or the newer "Workflows" one) will NOT render the reused dispatcher fragment's
+# {id, anomaly_type, severity, timestamp} JSON — it needs an Adaptive Card wrapped in the
+# `{type:"message", attachments:[...]}` envelope. Built in JavaScript because the payload is
+# deeply nested. `${SEVERITY_LABEL}` is substituted per lane (CRITICAL vs MAJOR/WARN).
+_TEAMS_CARD_SCRIPT = """
+for (var i = 0; i < records.length; i++) {
+  try {
+    var r = records[i];
+    var sev = '${SEVERITY_LABEL}';
+    var title = sev + ' quality defect - part ' + r.value['part_id'];
+    r.value['teams_card'] = JSON.stringify({
+      type: 'message',
+      attachments: [{
+        contentType: 'application/vnd.microsoft.card.adaptive',
+        content: {
+          '$schema': 'http://adaptivecards.io/schemas/adaptive-card.json',
+          type: 'AdaptiveCard',
+          version: '1.4',
+          body: [
+            { type: 'TextBlock', size: 'Large', weight: 'Bolder', color: (sev === 'CRITICAL' ? 'Attention' : 'Warning'), text: title },
+            { type: 'FactSet', facts: [
+              { title: 'Part', value: '' + r.value['part_id'] },
+              { title: 'Line', value: '' + r.value['line_id'] },
+              { title: 'Category', value: '' + r.value['defect_category'] },
+              { title: 'Defect codes', value: '' + r.value['defect_codes_str'] },
+              { title: 'Supplier', value: '' + r.value['supplier_name'] },
+              { title: 'Detected', value: '' + r.value['inspection_timestamp'] }
+            ]}
+          ]
+        }
+      }]
+    });
+    output.write(r);
+  } catch (e) {
+    error.write(records[i], 'teams card build error: ' + e);
+  }
+}
+"""
 
 
 def build(sch, engine_id, name=None, line_id=None, env="dev"):
@@ -56,8 +143,9 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         topic_list=["quality.defects.major"],
         consumer_group=group,
         data_format="JSON",
-        broker_uri="${KAFKA_BROKER}",
+        broker_uri="${KAFKA_BROKER}",  # ignored once a named connection is applied below
     )
+    apply_connection(origin, sch, "manufacturing__kafka__dev")
     # Per-line filter: Stream Selector after the origin keeps this line's records and
     # discards the rest (the Kafka origin has no record-precondition config).
     line_filter = line_trash = None
@@ -90,6 +178,7 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         username="${MYSQL_USER}",
         password="${MYSQL_PASSWORD}",
     )
+    apply_connection(erp_lookup, sch, "manufacturing__mysql__dev")
 
     # --- Classify API: POST defect codes → category + recommended action -------------
     # The whole record is sent as JSON; WireMock stubs match on defect code substrings.
@@ -120,41 +209,178 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         "expression_processor_configs",
     )
 
-    # --- CRITICAL alert branch -------------------------------------------------------
-    # A precondition can't be set on a fragment-instance wrapper via the SDK, so severity
-    # filtering is done with a dedicated Stream Selector: it routes CRITICAL defects to
-    # the alert_notification_dispatcher fragment and everything else to Trash. This branch
-    # is fanned out from classify_ee (a single-output stage → broadcast), so the main
-    # quarantine chain below still processes every record.
+    # Flatten /defect_codes (a LIST) into a plain readable string, /defect_codes_str.
+    # Neither EL nor a straight JS JSON.stringify() render this cleanly: EL's
+    # record:value() on a LIST gives each element's raw Field[TYPE:value] toString, this
+    # engine has no str:join EL function ("No function is mapped to the name"), and
+    # JSON.stringify() on the Java-backed list Rhino hands back from r.value[...] returns
+    # undefined rather than an array literal. A plain indexed loop (bracket access +
+    # .length, which Rhino's LiveConnect does support for a Java List) is the one thing
+    # that reliably works. Every downstream alert/email reads /defect_codes_str, never
+    # /defect_codes directly.
+    codes_join = builder.add_stage("JavaScript Evaluator")
+    codes_join.script = """
+for (var i = 0; i < records.length; i++) {
+  try {
+    var r = records[i];
+    var list = r.value['defect_codes'];
+    var codes = '';
+    if (list) {
+      for (var j = 0; j < list.length; j++) {
+        if (j > 0) { codes += ', '; }
+        codes += list[j];
+      }
+    }
+    r.value['defect_codes_str'] = codes;
+    output.write(r);
+  } catch (e) {
+    error.write(records[i], 'defect_codes join error: ' + e);
+  }
+}
+"""
+
+    # --- Severity-routed alerting (brief §2.1 step 8 / Master §4.2) ------------------
+    # MINOR -> INFO (email) · MAJOR -> WARN (Teams) · CRITICAL -> Teams + Jira. Every
+    # CRITICAL/MAJOR also fans out to the reused alert_notification_dispatcher fragment,
+    # which POSTs to the WireMock alerts stub — an auditable central alert trail (Master §4.2
+    # "all alerts route through this fragment") that also backs the qtp_alerts_fired_total
+    # Prometheus metric. The dispatcher's fixed payload won't render in Teams, so the REAL
+    # human-facing Teams notification is a proper Adaptive Card posted by a dedicated HTTP
+    # Client (below) — the fragment stays the audit sink, our stage does the real delivery.
+    #
+    # Real secrets (Teams webhook URL, Jira email/token) are NEVER baked into this pipeline's
+    # own parameters below (safe placeholders only) — they are supplied as CONTROL HUB JOB
+    # runtime parameters at job-creation time by `qtp jobs create` (see qtp/jobs/job_manager.py
+    # + qtp/common/env.py:job_runtime_secrets()), so they never appear in the exported JSON.
     alert_selector = builder.add_stage("Stream Selector")
-    # Predicates DEFINE the lanes and must be set before wiring:
-    #   lane 0 -> CRITICAL defects (alert); lane 1 -> default (no alert).
-    alert_selector.predicates = ["${record:value('/defect_category') == 'CRITICAL'}", "default"]
+    #   lane 0 CRITICAL -> audit + Teams card + Jira · lane 1 MAJOR -> audit + Teams card · lane 2 MINOR -> email.
+    alert_selector.predicates = [
+        "${record:value('/defect_category') == 'CRITICAL'}",
+        "${record:value('/defect_category') == 'MAJOR'}",
+        "default",
+    ]
 
-    # Shape fields for the teammate's shared alert_notification_dispatcher fragment.
-    # That fragment parameterizes the id/metric/id-out-key field names but reads severity
-    # and timestamp from FIXED field names, so map our defect fields onto /severity and
-    # /timestamp here. (id/metric are pointed at existing fields via the ID_FIELD /
-    # METRIC_FIELD params below — no copy needed.)
-    alert_shaper = builder.add_stage("Expression Evaluator")
-    set_first(
-        alert_shaper,
-        [
-            {"fieldToSet": "/severity", "expression": "${record:value('/defect_category')}"},
-            {"fieldToSet": "/timestamp", "expression": "${record:value('/inspection_timestamp')}"},
-        ],
-        "field_expressions",
-        "expression_processor_configs",
-    )
-
-    # Reuse the team's shared alert dispatcher (cross-team fragment reuse).
+    # Reused shared fragment = the WireMock audit sink for every CRITICAL/MAJOR alert.
     alert_frag_obj = resolve_fragment(sch, "alert_notification_dispatcher")
     alert_frag = builder.add_fragment(alert_frag_obj)
 
-    # Non-CRITICAL defects need no alert; Trash terminates that lane cleanly.
-    alert_trash = builder.add_stage("Trash")
+    # Real Teams delivery: one HTTP Client fed by both severity lanes (each builds its own
+    # /teams_card via the shapers below), POSTing the Adaptive Card to the webhook (no auth).
+    teams_http = builder.add_stage("HTTP Client", type="processor")
+    set_config(
+        teams_http,
+        resource_url="${TEAMS_ALERT_WEBHOOK_URL}",
+        http_method="POST",
+        data_format="JSON",
+        output_field="/teams_response",
+        request_data="${record:value('/teams_card')}",
+        max_retries=3,
+        base_backoff_interval_in_ms=1000,
+        action_for_timeout="RETRY_EXPONENTIAL_BACKOFF",
+    )
+    teams_trash = builder.add_stage("Trash")
+
+    # --- CRITICAL lane: severity + Teams card + Jira payload, then fan out -------------
+    critical_shaper = builder.add_stage("JavaScript Evaluator")
+    critical_shaper.script = (
+        _TEAMS_CARD_SCRIPT.replace("${SEVERITY_LABEL}", "CRITICAL")
+    )
+    # A second JS to add the Jira payload + severity (kept separate so each script stays
+    # single-purpose and readable). Runs after the Teams card is built.
+    critical_meta = builder.add_stage("Expression Evaluator")
+    set_first(
+        critical_meta,
+        [{"fieldToSet": "/severity", "expression": "CRITICAL"},
+         {"fieldToSet": "/timestamp", "expression": "${record:value('/inspection_timestamp')}"}],
+        "field_expressions", "expression_processor_configs",
+    )
+
+    jira_shaper = builder.add_stage("JavaScript Evaluator")
+    jira_shaper.script = _JIRA_PAYLOAD_SCRIPT
+
+    jira_http = builder.add_stage("HTTP Client", type="processor")
+    set_config(
+        jira_http,
+        resource_url="${JIRA_BASE_URL}/rest/api/3/issue",
+        http_method="POST",
+        data_format="JSON",
+        output_field="/jira_response",
+        request_data="${record:value('/jira_payload')}",
+        authentication_type="BASIC",
+        username="${JIRA_USER_EMAIL}",
+        password="${JIRA_API_TOKEN}",
+        max_retries=3,
+        base_backoff_interval_in_ms=1000,
+        action_for_timeout="RETRY_EXPONENTIAL_BACKOFF",
+    )
+    jira_trash = builder.add_stage("Trash")  # absorb the Jira API response; nothing downstream needs it
+
+    # --- Alert throttle: protect Teams/Jira from a hot line paging on every record ----
+    # A line producing CRITICAL/MAJOR defects back-to-back was posting a Teams card +
+    # Jira ticket per record, which is what triggered Power Automate's own throttling
+    # ("Your operation has been throttled" — an action-limit on the connector) and a
+    # 28-ticket-per-hour Jira flood. The audit trail (WireMock dispatcher fragment,
+    # Postgres quarantine/defective_parts) still records every single defect — nothing
+    # is dropped from compliance data. Only the human/external-facing Teams card + Jira
+    # ticket are throttled: at most one per (line_id, defect_category) per
+    # ALERT_THROTTLE_WINDOW_SECS; repeats within the window go to the duplicate lane
+    # (trashed, not error — a suppressed alert is not a pipeline failure).
+    critical_throttle = builder.add_stage("Record Deduplicator")
+    set_config(
+        critical_throttle,
+        compare="SPECIFIED_FIELDS",
+        fields_to_compare=["/line_id", "/defect_category"],
+        time_to_compare_in_secs=ALERT_THROTTLE_WINDOW_SECS,
+        max_records_to_compare=100000,
+    )
+    critical_throttle_trash = builder.add_stage("Trash")
+
+    major_throttle = builder.add_stage("Record Deduplicator")
+    set_config(
+        major_throttle,
+        compare="SPECIFIED_FIELDS",
+        fields_to_compare=["/line_id", "/defect_category"],
+        time_to_compare_in_secs=ALERT_THROTTLE_WINDOW_SECS,
+        max_records_to_compare=100000,
+    )
+    major_throttle_trash = builder.add_stage("Trash")
+
+    # --- MAJOR lane: severity=WARN + Teams card ----------------------------------------
+    major_shaper = builder.add_stage("JavaScript Evaluator")
+    major_shaper.script = _TEAMS_CARD_SCRIPT.replace("${SEVERITY_LABEL}", "MAJOR")
+    major_meta = builder.add_stage("Expression Evaluator")
+    set_first(
+        major_meta,
+        [{"fieldToSet": "/severity", "expression": "WARN"},
+         {"fieldToSet": "/timestamp", "expression": "${record:value('/inspection_timestamp')}"}],
+        "field_expressions", "expression_processor_configs",
+    )
+
+    # --- MINOR lane (default): INFO via email --------------------------------------
+    # NOTE (residual verification): requires the engine's SMTP relay to be configured
+    # (mail.smtp.host/port in the engine's sdc.properties, pointed at Mailhog) + a restart
+    # to apply — this is the one alerting tier not yet proven live end-to-end. If the relay
+    # isn't configured, MINOR defects fail this stage and land in the DLQ (visible, not
+    # silently lost) instead of emailing. Confirm with a live preview once the relay is set.
+    minor_email = builder.add_stage("Email")
+    minor_email.email_configuration = [{
+        "email": ["${QUALITY_MANAGER_EMAIL}"],
+        "subject": "INFO: MINOR defect - ${record:value('/part_id')} (${record:value('/line_id')})",
+        "body": (
+            "MINOR defect recorded (informational - no action required).\n\n"
+            "Part: ${record:value('/part_id')}\nLine: ${record:value('/line_id')}\n"
+            "Defect codes: ${record:value('/defect_codes_str')}\n"
+            "Detected: ${record:value('/inspection_timestamp')}"
+        ),
+    }]
 
     # --- Quarantine API: PUT /quarantine/register (all defects) -----------------------
+    # Compliance (brief §6): "Quarantine API call is mandatory. Retry 3 times with
+    # exponential backoff before escalating." max_retries=3 + base_backoff_interval_in_ms=1000
+    # with RETRY_EXPONENTIAL_BACKOFF gives ~1s/2s/4s backoff between attempts; once retries are
+    # exhausted the record still fails the stage and is routed to the pipeline's error stage
+    # (MinIO DLQ, below) — the escalation path is "visible in the DLQ + defect-rate/DLQ
+    # monitoring" rather than silently dropped.
     quarantine = builder.add_stage("HTTP Client", type="processor")
     set_config(
         quarantine,
@@ -163,6 +389,9 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         data_format="JSON",
         output_field="/quarantine_response",
         request_data="${record:value('/')}",  # send the record as the request body
+        max_retries=3,
+        base_backoff_interval_in_ms=1000,
+        action_for_timeout="RETRY_EXPONENTIAL_BACKOFF",
     )
 
     # Lift quarantine_id + stamp traceability_completed_at (ISO 9001 + 2-hour SLA anchor).
@@ -189,8 +418,8 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
     set_first(
         field_remover,
         [
-            "/measurements", "/quality_score", "/quality_issues",
-            "/classify_response", "/quarantine_response", "/defect_codes",
+            "/measurements", "/dq_score", "/dq_status", "/dq_checked_at",
+            "/classify_response", "/quarantine_response", "/defect_codes", "/defect_codes_str",
         ],
         "fields",
     )
@@ -207,6 +436,7 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         username="${PG_USER}",
         password="${PG_PASSWORD}",
     )
+    apply_connection(defect_out, sch, "manufacturing__postgres__dev")
 
     # --- DLQ error stage → MinIO kermit-error-dlq ------------------------------------
     # Label confirmed: "Write to Amazon S3" (canvas Error Records dropdown).
@@ -224,6 +454,9 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         signing_region_for_s3="US_EAST_1",
         use_path_style_address_model=True,
     )
+    # See the identical note in quality_ingest.py: this error-stage variant reports no
+    # supported_connection_types, but `.connection` exists — attempted, verify via validate.
+    apply_connection(dlq, sch, "manufacturing__minio__dev", fallback_note="error-stage variant may not support connections")
 
     # --- Audit stop event (PENDING — same blocker as quality_ingest) ------------------
     # Uncomment once the correct lifecycle stage label is confirmed in the canvas:
@@ -245,15 +478,29 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
     stage = head
     for enricher in enrichers:
         stage = stage >> enricher
-    stage = stage >> erp_lookup >> classify >> classify_ee
+    stage = stage >> erp_lookup >> classify >> classify_ee >> codes_join
     # Main spine: every defect is quarantined, enriched, and written to defective_parts.
-    classify_ee >> quarantine >> quarantine_ee >> field_remover >> defect_out
+    codes_join >> quarantine >> quarantine_ee >> field_remover >> defect_out
     # Fan-out: severity-routed alerting in parallel (broadcast — same records).
-    classify_ee >> alert_selector
-    alert_selector >> alert_shaper >> alert_frag   # lane 0: CRITICAL -> shape -> dispatcher
-    alert_selector >> alert_trash                  # lane 1: default  -> Trash (no alert)
+    codes_join >> alert_selector
+    # lane 0 CRITICAL: build Teams card -> add severity/Jira meta -> audit (unthrottled) +
+    # throttled fan-out to Teams/Jira (unique lane -> real delivery, duplicate lane -> trash)
+    alert_selector >> critical_shaper >> critical_meta
+    critical_meta >> alert_frag                               # audit sink (WireMock, every defect)
+    critical_meta >> critical_throttle
+    critical_throttle >> teams_http >> teams_trash            # unique lane: real Teams Adaptive Card
+    critical_throttle >> jira_shaper >> jira_http >> jira_trash  # unique lane: real Jira ticket
+    critical_throttle >> critical_throttle_trash              # duplicate lane: suppressed, not an error
+    # lane 1 MAJOR: build Teams card -> add severity -> audit (unthrottled) + throttled Teams
+    alert_selector >> major_shaper >> major_meta
+    major_meta >> alert_frag
+    major_meta >> major_throttle
+    major_throttle >> teams_http                              # unique lane: merges into the same Teams stage
+    major_throttle >> major_throttle_trash                    # duplicate lane: suppressed, not an error
+    # lane 2 MINOR (default): informational email
+    alert_selector >> minor_email
     if line_filter is not None:
-        line_filter >> line_trash                  # lane 1: other lines -> Trash
+        line_filter >> line_trash                  # other lines -> Trash
 
     full_name = name or (PIPELINE_NAME + (f"__{line_id}" if line_id else ""))
     labels = ["industry:manufacturing", f"env:{env}"] + ([f"line:{line_id}"] if line_id else [])
@@ -282,9 +529,15 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         "alert_01_ID_FIELD":            "part_id",
         "alert_01_METRIC_FIELD":        "defect_category",
         "alert_01_ID_OUT_KEY":          "part_id",
+        # The dispatcher stays on WireMock: it is the auditable alert trail (Master §4.2) +
+        # the qtp_alerts_fired_total Prometheus source — NOT the real Teams delivery. So these
+        # keep the WireMock default and are NOT overridden by the job.
         "alert_01_MAINTENANCE_API_URL": "http://wiremock:8080/alerts",
-        # Unprefixed fallback in case the URL ref wasn't a declared fragment param.
         "MAINTENANCE_API_URL":          "http://wiremock:8080/alerts",
+        # Real Teams webhook: SAFE PLACEHOLDER default (WireMock, not a secret). `qtp jobs
+        # create` overrides this with the real TEAMS_ALERT_WEBHOOK_URL from .env as a JOB
+        # runtime parameter — never baked into the published pipeline or the exported JSON.
+        "TEAMS_ALERT_WEBHOOK_URL":      "http://wiremock:8080/alerts",
         "PG_JDBC_URL":     "jdbc:postgresql://postgres:5432/quality",
         "PG_USER":         "qtp",
         "PG_PASSWORD":     "qtp_pw",
@@ -298,5 +551,15 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         "SOURCE_SYSTEM":   "manufacturing",
         "ENVIRONMENT":     "dev",
         "SCHEMA_VERSION":  "1",
+        # Real Jira credentials: SAFE PLACEHOLDERS only (never real secrets in the
+        # published pipeline). `qtp jobs create` overrides these with the real values
+        # from .env as job runtime parameters, exactly like the Teams URL above.
+        "JIRA_BASE_URL":    "http://wiremock:8080",
+        "JIRA_USER_EMAIL":  "",
+        "JIRA_API_TOKEN":   "",
+        "JIRA_PROJECT_KEY": "QUAL",
+        "JIRA_ISSUE_TYPE":  "Task",
+        # Not a secret — safe to bake in directly.
+        "QUALITY_MANAGER_EMAIL": "quality.manager@kermit.local",
     })
     return pipeline

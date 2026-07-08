@@ -216,6 +216,12 @@ def cmd_jobs_stop(args) -> int:
     return stop(args.flow, force=args.force)
 
 
+def cmd_jobs_update_parameters(args) -> int:
+    from .jobs.job_manager import update_parameters
+
+    return update_parameters(args.flow, restart=args.restart)
+
+
 # ------------------------------------------------------------------- teardown
 def cmd_teardown_run(args) -> int:
     from .demo.teardown import run
@@ -264,6 +270,38 @@ def cmd_schedule_install(args) -> int:
     from .demo.schedule import install
 
     return install(args.dir, args.monitor_interval, args.sla_interval)
+
+
+# ------------------------------------------------------------------- connections
+def cmd_connections_create(args) -> int:
+    from .common.connections import create_all
+    from .common.controlhub import get_authoring_engine, get_control_hub
+
+    sch = get_control_hub()
+    engine = get_authoring_engine(sch, args.engine_id)
+    created = create_all(sch, engine, names=args.name, replace=args.replace)
+    print(f"\n  Created {len(created)} connection(s): {', '.join(created) or '(none - already existed)'}\n")
+    return 0
+
+
+def cmd_connections_list(args) -> int:
+    from .common.controlhub import get_control_hub
+
+    sch = get_control_hub()
+    print(f"\n  {'NAME':32} {'TYPE':22} ID")
+    print("  " + "-" * 78)
+    for c in sch.connections:
+        if str(getattr(c, "name", "")).startswith("manufacturing__"):
+            print(f"  {c.name:32} {c.connection_type:22} {c.id}")
+    print("  " + "-" * 78 + "\n")
+    return 0
+
+
+# ---------------------------------------------------------------------- metrics
+def cmd_metrics_serve(args) -> int:
+    from .metrics.exporter import serve
+
+    return serve(args.port, once=args.once)
 
 
 # --------------------------------------------------------------------------- sla
@@ -471,6 +509,26 @@ def build_parser() -> argparse.ArgumentParser:
     sc_install.add_argument("--sla-interval", type=int, default=15)
     sc_install.set_defaults(func=cmd_schedule_install)
 
+    # connections (implemented) — Control Hub named Connections (Master §9.2)
+    connections = groups.add_parser("connections", help="Control Hub named Connections (Master §9.2)")
+    conn_actions = connections.add_subparsers(dest="action", required=True, metavar="<action>")
+    c_create = conn_actions.add_parser("create", help="create the manufacturing__* named connections")
+    c_create.add_argument("--name", nargs="*", choices=["postgres", "mysql", "minio", "kafka"],
+                          help="which connections to create (default: all)")
+    c_create.add_argument("--replace", action="store_true", help="recreate if already present")
+    c_create.add_argument("--engine-id", help="authoring Data Collector id (else ENGINE_ID/SDC_ID)")
+    c_create.set_defaults(func=cmd_connections_create)
+    c_list = conn_actions.add_parser("list", help="list the manufacturing__* named connections")
+    c_list.set_defaults(func=cmd_connections_list)
+
+    # metrics (implemented) — Prometheus exporter for real StreamSets job metrics
+    metrics = groups.add_parser("metrics", help="Prometheus exporter for real pipeline-health metrics")
+    metrics_actions = metrics.add_subparsers(dest="action", required=True, metavar="<action>")
+    m_serve = metrics_actions.add_parser("serve", help="serve /metrics for Prometheus to scrape")
+    m_serve.add_argument("--port", type=int, default=9091, help="listen port (default 9091)")
+    m_serve.add_argument("--once", action="store_true", help="print one snapshot and exit")
+    m_serve.set_defaults(func=cmd_metrics_serve)
+
     # jobs (implemented) — Control Hub job lifecycle for the live path
     jobs = groups.add_parser("jobs", help="Control Hub job lifecycle (status/create/start/stop)")
     j_actions = jobs.add_subparsers(dest="action", required=True, metavar="<action>")
@@ -491,6 +549,13 @@ def build_parser() -> argparse.ArgumentParser:
     j_stop.add_argument("--flow", nargs="*", help="flow names to stop")
     j_stop.add_argument("--force", action="store_true", help="force-stop without graceful wait")
     j_stop.set_defaults(func=cmd_jobs_stop)
+    j_update = j_actions.add_parser("update-parameters",
+                                     help="re-inject fresh .env secrets into an existing job "
+                                          "(runtime params only, no delete/recreate)")
+    j_update.add_argument("--flow", nargs="*", help="flow names to update")
+    j_update.add_argument("--restart", action="store_true",
+                           help="stop/restart the job so the new parameters take effect immediately")
+    j_update.set_defaults(func=cmd_jobs_update_parameters)
 
     # teardown (implemented) — remove the demo's DEMO-* footprint
     teardown = groups.add_parser("teardown", help="Remove DEMO-* data (and optionally stop jobs)")

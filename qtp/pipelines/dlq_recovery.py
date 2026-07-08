@@ -23,6 +23,7 @@ re-read record's part_id/line_id — enough to locate and reprocess the failed p
 NOTE: S3 origin prefix/credentials attribute names vary by engine; confirm in the canvas.
 """
 
+from ..common.connections import apply_connection
 from ..common.fragments import resolve_fragment
 from ..common.util import get_logger, set_config, set_first
 
@@ -57,6 +58,7 @@ def build(sch, engine_id, name=None):
         signing_region_for_s3="US_EAST_1",
         use_path_style_address_model=True,
     )
+    apply_connection(origin, sch, "manufacturing__minio__dev")
 
     dlq = builder.add_fragment(resolve_fragment(sch, "dead_letter_queue_handler"))
 
@@ -75,6 +77,7 @@ def build(sch, engine_id, name=None):
         username="${PG_USER}",
         password="${PG_PASSWORD}",
     )
+    apply_connection(recovery_out, sch, "manufacturing__postgres__dev")
 
     origin >> dlq >> field_remover >> recovery_out
 
