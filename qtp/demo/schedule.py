@@ -1,19 +1,19 @@
-"""schedule.py — run QTP's compliance cadence on a schedule.
+"""schedule.py - run QTP's compliance cadence on a schedule.
 
-The brief's compliance controls are not one-shots — they are recurring duties:
+The brief's compliance controls are not one-shots - they are recurring duties:
 
-  * defect-rate monitor — short cadence (default every 5 min),
-  * traceability SLA scan — every 15 min (the brief's explicit interval),
-  * shift quality report — at each shift boundary (06:00 / 14:00 / 22:00).
+  * defect-rate monitor - short cadence (default every 5 min),
+  * traceability SLA scan - every 15 min (the brief's explicit interval),
+  * shift quality report - at each shift boundary (06:00 / 14:00 / 22:00).
 
 `qtp schedule run` runs all three in a single long-lived process using only the standard
-library (no extra dependency, cross-platform) — this is what the optional `qtp-scheduler`
+library (no extra dependency, cross-platform) - this is what the optional `qtp-scheduler`
 docker service runs. `qtp schedule run --once` fires each poller a single time (handy for a
 cron/Task-Scheduler entry or a quick local check).
 
 `qtp schedule install` writes ready-to-use scheduler artefacts (crontab, Windows Task
 Scheduler commands, and a docker-compose service) so the cadence can be installed the native
-way on any host — nothing hardcoded, all derived from the configured intervals.
+way on any host - nothing hardcoded, all derived from the configured intervals.
 """
 
 import time
@@ -134,7 +134,7 @@ def render_artifacts(monitor_min: int, sla_min: int, boundaries: list[str]) -> d
     """Render cron / Windows Task Scheduler / docker-compose scheduler artefacts."""
     repo = "/path/to/quality-traceability-platform"
     cron = "\n".join([
-        "# QTP compliance cadence — install with: crontab qtp-cron",
+        "# QTP compliance cadence - install with: crontab qtp-cron",
         f"*/{monitor_min} * * * * cd {repo} && qtp monitor defect-rate >> /var/log/qtp-monitor.log 2>&1",
         f"*/{sla_min} * * * * cd {repo} && qtp sla scan >> /var/log/qtp-sla.log 2>&1",
         "0 14 * * * cd %s && qtp report shift --shift A >> /var/log/qtp-report.log 2>&1" % repo,
@@ -144,7 +144,7 @@ def render_artifacts(monitor_min: int, sla_min: int, boundaries: list[str]) -> d
     ])
 
     schtasks = "\n".join([
-        "# QTP compliance cadence — Windows Task Scheduler (run in an elevated PowerShell).",
+        "# QTP compliance cadence - Windows Task Scheduler (run in an elevated PowerShell).",
         "# Adjust -TR working dir to your repo path; assumes `qtp` is on PATH.",
         f'schtasks /Create /SC MINUTE /MO {monitor_min} /TN "QTP\\DefectRate" '
         '/TR "cmd /c qtp monitor defect-rate" /F',

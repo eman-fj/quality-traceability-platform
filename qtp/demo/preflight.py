@@ -1,9 +1,9 @@
-"""preflight.py — pre-demo service health board.
+"""preflight.py - pre-demo service health board.
 
 Probes every service the demonstration touches and prints a one-line-per-service status
 board (GREEN / RED), so a presenter can confirm the stack is up *before* running
 `qtp demo run`. Each probe is host-side (the same remapped ports the SDK scripts use) and
-fully isolated — one service being down never masks the status of the others.
+fully isolated - one service being down never masks the status of the others.
 
 Required services (a RED here means the demo cannot fully run): Postgres, WireMock.
 Everything else is reported but treated as optional/degradable, matching how the demo and
@@ -40,12 +40,12 @@ def _tcp_ok(host: str, port: int, timeout: float = 2.0) -> bool:
 
 
 def _http_ok(url: str, timeout: float = 3.0, insecure: bool = False) -> bool:
-    """True if an HTTP GET returns any response (even 4xx — the port is alive)."""
+    """True if an HTTP GET returns any response (even 4xx - the port is alive)."""
     import requests
 
     if insecure:
         # MinIO serves a self-signed cert in this stack; the "unverified HTTPS" warning is
-        # expected and noisy on a health probe — silence it.
+        # expected and noisy on a health probe - silence it.
         import urllib3
 
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -98,7 +98,7 @@ def _probe_kafka() -> tuple[bool, str]:
 
 def _probe_minio() -> tuple[bool, str]:
     endpoint = minio_settings()["endpoint_url"]
-    # MinIO is served over TLS with a self-signed cert in this stack — skip verification.
+    # MinIO is served over TLS with a self-signed cert in this stack - skip verification.
     ok = _http_ok(endpoint + "/minio/health/live", insecure=True)
     if not ok:  # fall back to TCP so a cert quirk doesn't read as "down"
         parsed = urlparse(endpoint)
@@ -128,7 +128,7 @@ def _probe_prometheus() -> tuple[bool, str]:
 def _probe_controlhub() -> tuple[bool, str]:
     """Optional: only meaningful if Control Hub creds are configured (for live overlays)."""
     if not os.getenv("SCH_URL"):
-        return True, "not configured (offline demo — fine)"
+        return True, "not configured (offline demo - fine)"
     parsed = urlparse(os.getenv("SCH_URL"))
     host = parsed.hostname or ""
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
@@ -180,7 +180,7 @@ def print_board(results: list[dict]) -> None:
 
 
 def run() -> int:
-    """`qtp preflight run` — print the health board; non-zero exit if a REQUIRED service is down."""
+    """`qtp preflight run` - print the health board; non-zero exit if a REQUIRED service is down."""
     results = gather()
     print_board(results)
     down_required = [r["service"] for r in results if r["required"] and not r["ok"]]

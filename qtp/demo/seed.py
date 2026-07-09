@@ -1,17 +1,17 @@
-"""seed.py — deterministic "golden thread" demo data.
+"""seed.py - deterministic "golden thread" demo data.
 
 Seeds the quality warehouse with a small, fixed scenario engineered so every compliance
 control has something concrete to demonstrate, the same way every run:
 
-  * **DEMO-CRIT-0001** — a CRITICAL surface-crack part on line_1, traced to its supplier
-    in 5 minutes (SLA *MET*). The hero of `qtp sla check` — a complete chain ending at a
+  * **DEMO-CRIT-0001** - a CRITICAL surface-crack part on line_1, traced to its supplier
+    in 5 minutes (SLA *MET*). The hero of `qtp sla check` - a complete chain ending at a
     **SUSPENDED** supplier (SUP-05), which is exactly the kind of finding the platform exists
     to surface.
-  * **DEMO-SLA-0002** — a CRITICAL part on line_2 detected >2 hours ago whose traceability
+  * **DEMO-SLA-0002** - a CRITICAL part on line_2 detected >2 hours ago whose traceability
     was never completed: a live **SLA breach** for `qtp sla scan` to catch and escalate.
   * **line_3** seeded hot (>2% defect rate) so `qtp monitor defect-rate` fires a CRITICAL
     alert + Jira ticket. Most of line_3's defects trace back to the same SUSPENDED supplier,
-    so the shift report's supplier-correlation also points at SUP-05 — one coherent story.
+    so the shift report's supplier-correlation also points at SUP-05 - one coherent story.
   * a full shift-A dataset (conforming + defective) so `qtp report shift` has real numbers.
 
 Everything is namespaced ``DEMO-*`` and the seed is idempotent (upsert; ``--reset`` wipes
@@ -30,7 +30,7 @@ from ..common.util import get_logger
 
 log = get_logger()
 
-# Mirror of the MySQL ERP seed (docker/mysql/init.sql) — the traceability facts the live
+# Mirror of the MySQL ERP seed (docker/mysql/init.sql) - the traceability facts the live
 # defect-enrichment pipeline would join in. Keeps the demo seed self-contained.
 ERP = {
     "BATCH-1001": ("SUP-01", "NordStahl Components GmbH", "S355J2", "ACCREDITED"),
@@ -131,19 +131,19 @@ def _build_dataset(now: datetime):
     """Return (conforming_rows, defective_rows, quarantine_rows) for the scenario."""
     conforming, defective, quarantine = [], [], []
 
-    # 1) Hero CRITICAL on line_1 — traced in 5 min (SLA MET), to the SUSPENDED supplier.
+    # 1) Hero CRITICAL on line_1 - traced in 5 min (SLA MET), to the SUSPENDED supplier.
     defective.append(_defective_row(
         HERO_PART, "line_1", "BATCH-1009", "OP-101", now - timedelta(minutes=12), "SUR-001",
         completed_after_min=5, quarantine_id="DEMO-Q-0001"))
     quarantine.append(("DEMO-Q-0001", HERO_PART, "QUARANTINED", 0))
 
-    # 2) SLA breach on line_2 — detected 190 min ago, traceability never completed.
+    # 2) SLA breach on line_2 - detected 190 min ago, traceability never completed.
     defective.append(_defective_row(
         BREACH_PART, "line_2", "BATCH-1005", "OP-102", now - timedelta(minutes=190), "MAT-001",
         completed_after_min=None, quarantine_id="DEMO-Q-0002"))
     quarantine.append(("DEMO-Q-0002", BREACH_PART, "QUARANTINED", 1))
 
-    # 3) Hot line_3 — 8 defects (5 MAJOR quarantined, 3 MINOR), most from SUP-05, all traced
+    # 3) Hot line_3 - 8 defects (5 MAJOR quarantined, 3 MINOR), most from SUP-05, all traced
     #    inside the SLA so they raise a defect-rate breach without polluting the SLA scan.
     hot_defects = [
         ("DEMO-L3-MAJ-001", "BATCH-1009", "DIM-001"),
@@ -229,7 +229,7 @@ def seed(reset: bool = True) -> dict:
 
 
 def run(reset: bool = True) -> int:
-    """`qtp demo seed` — seed the scenario and print a short summary."""
+    """`qtp demo seed` - seed the scenario and print a short summary."""
     s = seed(reset=reset)
     print(f"\n  Golden thread seeded for shift {s['shift']} on {s['date']}:")
     print(f"    hero CRITICAL part (SLA met) : {s['hero_part']}  -> sla check --part {s['hero_part']}")

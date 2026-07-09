@@ -1,6 +1,6 @@
 """Control Hub session factory.
 
-Reads credentials from the environment (.env) — never hardcoded — matching the
+Reads credentials from the environment (.env) - never hardcoded - matching the
 convention used across the team's SDK scripts:
     SCH_URL, SCH_CRED_ID, SCH_TOKEN, and optionally ENGINE_ID (authoring SDC).
 """

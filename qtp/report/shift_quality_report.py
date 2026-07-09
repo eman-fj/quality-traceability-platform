@@ -1,4 +1,4 @@
-"""shift_quality_report.py — end-of-shift quality report for production management.
+"""shift_quality_report.py - end-of-shift quality report for production management.
 
 Generates the shift quality report the ISO 9001 quality manager receives at the end of
 every shift. For a given ``--shift`` and ``--date`` it:
@@ -13,7 +13,7 @@ every shift. For a given ``--shift`` and ``--date`` it:
   * records the run in the quality.shift_reports table.
 
 Host-side connection details come from .env (nothing hardcoded). The MinIO upload, the
-email, and the MySQL enrichment each degrade gracefully — a missing sink never stops the
+email, and the MySQL enrichment each degrade gracefully - a missing sink never stops the
 report from being generated.
 """
 
@@ -102,7 +102,7 @@ def collect_metrics(conn, shift: str, day: str) -> dict:
 
 def enrich_supplier_accreditation(supplier_ids: list[str]) -> dict:
     """Attach country + accreditation_status from the MySQL ERP. Degrades to an empty
-    map if pymysql is unavailable or the ERP can't be reached — the report still builds."""
+    map if pymysql is unavailable or the ERP can't be reached - the report still builds."""
     if not supplier_ids:
         return {}
     try:
@@ -121,7 +121,7 @@ def enrich_supplier_accreditation(supplier_ids: list[str]) -> dict:
             cur.execute(
                 f"SELECT supplier_id, name, country, accreditation_status FROM suppliers "
                 f"WHERE supplier_id IN ({placeholders})", supplier_ids)
-            # Canonical UTF-8 name from the ERP (defective_parts.supplier_name is mojibake —
+            # Canonical UTF-8 name from the ERP (defective_parts.supplier_name is mojibake -
             # the pipeline's JDBC lookup connection wasn't UTF-8).
             return {row[0]: {"name": row[1], "country": row[2], "accreditation_status": row[3]}
                     for row in cur.fetchall()}
@@ -192,8 +192,8 @@ def build_workbook(metrics: dict, shift: str, day: str, accreditation: dict):
         row += 1
         acc = accreditation.get(sup["supplier_id"], {})
         ws.cell(row, 1, _fix_mojibake(acc.get("name") or sup["supplier_name"]))
-        ws.cell(row, 2, acc.get("country", "—"))
-        ws.cell(row, 3, acc.get("accreditation_status", "—"))
+        ws.cell(row, 2, acc.get("country", "-"))
+        ws.cell(row, 3, acc.get("accreditation_status", "-"))
         ws.cell(row, 4, sup["defects"])
     ws.column_dimensions["A"].width = 32
     ws.column_dimensions["C"].width = 16
@@ -257,7 +257,7 @@ def upload_to_minio(local_path: str, key: str) -> str | None:
 def email_report(local_path: str, shift: str, day: str, recipient: str) -> bool:
     try:
         msg = EmailMessage()
-        msg["Subject"] = f"Shift Quality Report — shift {shift} {day}"
+        msg["Subject"] = f"Shift Quality Report - shift {shift} {day}"
         msg["From"] = "qtp-reports@kermit.local"
         msg["To"] = recipient
         msg.set_content(
@@ -298,7 +298,7 @@ def generate(shift: str, day: str, recipient: str = DEFAULT_RECIPIENT) -> int:
     try:
         metrics = collect_metrics(conn, shift, day)
         if metrics["total_inspected"] == 0:
-            log.warning("No parts inspected for shift %s on %s — nothing to report.", shift, day)
+            log.warning("No parts inspected for shift %s on %s - nothing to report.", shift, day)
             return 0
 
         accreditation = enrich_supplier_accreditation(

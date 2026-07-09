@@ -44,8 +44,8 @@ INLINE_FRAGMENTS = ["kafka_header_enricher", "data_quality_tagger", "schema_vers
 # build()): the first CRITICAL/MAJOR defect for a given (line_id, severity) fires one real
 # alert immediately; further defects for that same key inside the window are counted, not
 # paged, and their running total is reported on the NEXT alert ("+N more since the last
-# alert"). This caps the outbound Teams/Jira call rate — the fix for the Power Automate
-# connector action-limit and the Jira flood — while preserving the suppressed count, unlike
+# alert"). This caps the outbound Teams/Jira call rate - the fix for the Power Automate
+# connector action-limit and the Jira flood - while preserving the suppressed count, unlike
 # a plain dedup-and-drop. The audit sink (WireMock dispatcher) and the Postgres
 # quarantine/defective_parts spine still record 100% of defects regardless.
 ALERT_ROLLUP_WINDOW_SECS = 300
@@ -88,7 +88,7 @@ for (var i = 0; i < records.length; i++) {
 
 # Builds the Jira Cloud REST v3 "create issue" payload for a CRITICAL defect. Jira's
 # `description` field requires Atlassian Document Format (a nested doc/paragraph/text
-# structure) — not a plain string — so this is built in JavaScript rather than via
+# structure) - not a plain string - so this is built in JavaScript rather than via
 # Expression Evaluator field paths, which is far more reliable for nested JSON. ${...}
 # parameter substitution in the script text mirrors the already-working pattern in the
 # reused alert_notification_dispatcher fragment's own JavaScript stage.
@@ -135,7 +135,7 @@ for (var i = 0; i < records.length; i++) {
 
 # Builds a Microsoft Teams message payload. A Teams webhook (whether classic "Incoming
 # Webhook" or the newer "Workflows" one) will NOT render the reused dispatcher fragment's
-# {id, anomaly_type, severity, timestamp} JSON — it needs an Adaptive Card wrapped in the
+# {id, anomaly_type, severity, timestamp} JSON - it needs an Adaptive Card wrapped in the
 # `{type:"message", attachments:[...]}` envelope. Built in JavaScript because the payload is
 # deeply nested. `${SEVERITY_LABEL}` is substituted per lane (CRITICAL vs MAJOR/WARN).
 _TEAMS_CARD_SCRIPT = """
@@ -294,14 +294,14 @@ for (var i = 0; i < records.length; i++) {
     # --- Severity-routed alerting (brief §2.1 step 8 / Master §4.2) ------------------
     # MINOR -> INFO (email) · MAJOR -> WARN (Teams) · CRITICAL -> Teams + Jira. Every
     # CRITICAL/MAJOR also fans out to the reused alert_notification_dispatcher fragment,
-    # which POSTs to the WireMock alerts stub — an auditable central alert trail (Master §4.2
+    # which POSTs to the WireMock alerts stub - an auditable central alert trail (Master §4.2
     # "all alerts route through this fragment") that also backs the qtp_alerts_fired_total
     # Prometheus metric. The dispatcher's fixed payload won't render in Teams, so the REAL
     # human-facing Teams notification is a proper Adaptive Card posted by a dedicated HTTP
-    # Client (below) — the fragment stays the audit sink, our stage does the real delivery.
+    # Client (below) - the fragment stays the audit sink, our stage does the real delivery.
     #
     # Real secrets (Teams webhook URL, Jira email/token) are NEVER baked into this pipeline's
-    # own parameters below (safe placeholders only) — they are supplied as CONTROL HUB JOB
+    # own parameters below (safe placeholders only) - they are supplied as CONTROL HUB JOB
     # runtime parameters at job-creation time by `qtp jobs create` (see qtp/jobs/job_manager.py
     # + qtp/common/env.py:job_runtime_secrets()), so they never appear in the exported JSON.
     alert_selector = builder.add_stage("Stream Selector")
@@ -375,7 +375,7 @@ for (var i = 0; i < records.length; i++) {
     # carrying the count suppressed since the previous alert; later defects in the window are
     # counted, not paged. A 2-lane Stream Selector then routes /alert_emit=='true' to the
     # real Teams/Jira delivery and the rest to Trash (suppressed, NOT an error). The audit
-    # sink (alert_frag) and the Postgres spine still see 100% of defects — only the outbound
+    # sink (alert_frag) and the Postgres spine still see 100% of defects - only the outbound
     # notification rate is capped; the suppressed count is preserved on the next alert.
     _gate_script = _ROLLUP_GATE_SCRIPT.replace("%WINDOW_MS%", str(ALERT_ROLLUP_WINDOW_SECS * 1000))
 
@@ -405,7 +405,7 @@ for (var i = 0; i < records.length; i++) {
     # --- MINOR lane (default): INFO via email --------------------------------------
     # NOTE (residual verification): requires the engine's SMTP relay to be configured
     # (mail.smtp.host/port in the engine's sdc.properties, pointed at Mailhog) + a restart
-    # to apply — this is the one alerting tier not yet proven live end-to-end. If the relay
+    # to apply - this is the one alerting tier not yet proven live end-to-end. If the relay
     # isn't configured, MINOR defects fail this stage and land in the DLQ (visible, not
     # silently lost) instead of emailing. Confirm with a live preview once the relay is set.
     minor_email = builder.add_stage("Email")
@@ -425,7 +425,7 @@ for (var i = 0; i < records.length; i++) {
     # exponential backoff before escalating." max_retries=3 + base_backoff_interval_in_ms=1000
     # with RETRY_EXPONENTIAL_BACKOFF gives ~1s/2s/4s backoff between attempts; once retries are
     # exhausted the record still fails the stage and is routed to the pipeline's error stage
-    # (MinIO DLQ, below) — the escalation path is "visible in the DLQ + defect-rate/DLQ
+    # (MinIO DLQ, below) - the escalation path is "visible in the DLQ + defect-rate/DLQ
     # monitoring" rather than silently dropped.
     quarantine = builder.add_stage("HTTP Client", type="processor")
     set_config(
@@ -454,18 +454,20 @@ for (var i = 0; i < records.length; i++) {
 
     # --- Strip fields defective_parts can't take (same lesson as quality_ingest) ------
     # Removed: the enrichment scratch fields (dq_*), the raw API response objects, the
-    # nested measurements object, and defect_codes (a LIST → the JDBC Producer can't
+    # nested measurements object, and the raw defect_codes LIST (the JDBC Producer can't
     # coerce a list into the JSONB column). What remains maps 1:1 to defective_parts:
     # part_id, line_id, inspection_timestamp, material_batch_id, operator_id, shift,
     # schema_version, supplier_id, supplier_name, material_grade, certificate_url,
-    # defect_category, recommended_action, quarantine_id, traceability_completed_at.
-    # (Raw defect_codes can be re-added later via a list→JSON-string conversion.)
+    # defect_category, recommended_action, quarantine_id, traceability_completed_at -
+    # plus defect_codes_str (a plain TEXT column, added specifically so this flattened,
+    # already-comma-joined string survives to Postgres for the Grafana "top defect codes"
+    # panel; the raw JSONB defect_codes column was otherwise always NULL).
     field_remover = builder.add_stage("Field Remover")
     set_first(
         field_remover,
         [
             "/measurements", "/dq_score", "/dq_status", "/dq_checked_at",
-            "/classify_response", "/quarantine_response", "/defect_codes", "/defect_codes_str",
+            "/classify_response", "/quarantine_response", "/defect_codes",
         ],
         "fields",
     )
@@ -501,10 +503,10 @@ for (var i = 0; i < records.length; i++) {
         use_path_style_address_model=True,
     )
     # See the identical note in quality_ingest.py: this error-stage variant reports no
-    # supported_connection_types, but `.connection` exists — attempted, verify via validate.
+    # supported_connection_types, but `.connection` exists - attempted, verify via validate.
     apply_connection(dlq, sch, "manufacturing__minio__dev", fallback_note="error-stage variant may not support connections")
 
-    # --- Audit stop event (PENDING — same blocker as quality_ingest) ------------------
+    # --- Audit stop event (PENDING - same blocker as quality_ingest) ------------------
     # Uncomment once the correct lifecycle stage label is confirmed in the canvas:
     #
     # audit_frag_obj = sch.pipelines.get(name="audit_log_writer", fragment=True)
@@ -527,7 +529,7 @@ for (var i = 0; i < records.length; i++) {
     stage = stage >> erp_lookup >> classify >> classify_ee >> codes_join
     # Main spine: every defect is quarantined, enriched, and written to defective_parts.
     codes_join >> quarantine >> quarantine_ee >> field_remover >> defect_out
-    # Fan-out: severity-routed alerting in parallel (broadcast — same records).
+    # Fan-out: severity-routed alerting in parallel (broadcast - same records).
     codes_join >> alert_selector
     # lane 0 CRITICAL: set severity/timestamp -> audit EVERY defect -> rollup gate; the
     # gate's emit lane builds the Teams card + Jira payload (with the rolled-up count) and
@@ -578,13 +580,13 @@ for (var i = 0; i < records.length; i++) {
         "alert_01_METRIC_FIELD":        "defect_category",
         "alert_01_ID_OUT_KEY":          "part_id",
         # The dispatcher stays on WireMock: it is the auditable alert trail (Master §4.2) +
-        # the qtp_alerts_fired_total Prometheus source — NOT the real Teams delivery. So these
+        # the qtp_alerts_fired_total Prometheus source - NOT the real Teams delivery. So these
         # keep the WireMock default and are NOT overridden by the job.
         "alert_01_MAINTENANCE_API_URL": "http://wiremock:8080/alerts",
         "MAINTENANCE_API_URL":          "http://wiremock:8080/alerts",
         # Real Teams webhook: SAFE PLACEHOLDER default (WireMock, not a secret). `qtp jobs
         # create` overrides this with the real TEAMS_ALERT_WEBHOOK_URL from .env as a JOB
-        # runtime parameter — never baked into the published pipeline or the exported JSON.
+        # runtime parameter - never baked into the published pipeline or the exported JSON.
         "TEAMS_ALERT_WEBHOOK_URL":      "http://wiremock:8080/alerts",
         "PG_JDBC_URL":     "jdbc:postgresql://postgres:5432/quality",
         "PG_USER":         "qtp",
@@ -607,7 +609,7 @@ for (var i = 0; i < records.length; i++) {
         "JIRA_API_TOKEN":   "",
         "JIRA_PROJECT_KEY": "QUAL",
         "JIRA_ISSUE_TYPE":  "Task",
-        # Not a secret — safe to bake in directly.
+        # Not a secret - safe to bake in directly.
         "QUALITY_MANAGER_EMAIL": "quality.manager@kermit.local",
     })
     return pipeline

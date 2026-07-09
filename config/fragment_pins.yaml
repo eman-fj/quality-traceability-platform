@@ -4,17 +4,17 @@ pins:
   # A teammate published v2-v6 directly onto this fragment's pipeline id after we built our
   # pipelines against v1 (v2-v6 rewrote it as Jython). Pinning by bare id would have silently
   # started embedding that rewrite on our next build. Tag "commitone" (added on v1's commit,
-  # 2026-07-01) pins the EXACT original version — immune to any further republishes.
+  # 2026-07-01) pins the EXACT original version - immune to any further republishes.
   kafka_header_enricher:
     pipeline_id: 096a2d49-6a83-43b5-b4e3-14ea254bfddb:ee5a552a-8945-11ee-a23c-673cdb9d2d12
     tag: commitone
 
-  # Our own fragment (single version, single committer as of 2026-07-06 — see `qtp fragments
+  # Our own fragment (single version, single committer as of 2026-07-06 - see `qtp fragments
   # list`). Teammates' versions (rukhmah's EL v3 53fb5f96-…; another teammate's Jython v19
   # 8d36bbc0-…, which needed a stage library that would not load on this engine) were trialled
   # for cross-team reuse and parked; the Jython copy has since been deleted from the workspace.
   # Tagged "commitone" pre-emptively (same protection as kafka_header_enricher, above) even
-  # though it's still the only version — so it's already immune the moment anyone else commits.
+  # though it's still the only version - so it's already immune the moment anyone else commits.
   data_quality_tagger:
     pipeline_id: 3514c567-7c40-4baa-97ab-46f93557812c:ee5a552a-8945-11ee-a23c-673cdb9d2d12
     tag: commitone

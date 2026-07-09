@@ -6,7 +6,7 @@ raw-material supplier and batch certificate **within 2 hours** (ISO 9001 / EU pr
 liability). This diagram reflects the *as-built* system, not an aspiration.
 
 > Authoring model: every pipeline and fragment is built and published to StreamSets Control
-> Hub through the Python SDK (`qtp` CLI) — nothing is hand-drawn on the canvas. Credentials
+> Hub through the Python SDK (`qtp` CLI) - nothing is hand-drawn on the canvas. Credentials
 > are injected as Control Hub **job runtime parameters** at job-creation time, never baked
 > into the pipeline definition or the committed JSON exports.
 
@@ -24,7 +24,7 @@ flowchart TB
         SIM --> K1
     end
 
-    subgraph P1["Pipeline A — manufacturing__quality_ingest"]
+    subgraph P1["Pipeline A - manufacturing__quality_ingest"]
         direction TB
         A_ENR["kafka_header_enricher →<br/>data_quality_tagger →<br/>schema_version_tagger"]:::sdc
         A_SEL{"Stream Selector<br/>defect_codes present?"}:::sdc
@@ -34,7 +34,7 @@ flowchart TB
         A_SEL -->|defect| K2[["Kafka · quality.defects.major"]]:::src
     end
 
-    subgraph P2["Pipeline B — manufacturing__defect_enrichment"]
+    subgraph P2["Pipeline B - manufacturing__defect_enrichment"]
         direction TB
         B_ENR["3 inline enrichers →<br/>JDBC Lookup (ERP join) →<br/>HTTP classify →<br/>defect_codes flatten (JS)"]:::sdc
         B_Q["HTTP quarantine<br/>(retry ×3 exp-backoff)"]:::sdc
@@ -87,14 +87,14 @@ flowchart TB
 
 - **Clean path** (high volume): ingest → enrich/tag/stamp → Field Remover → `conforming_parts`
   in Postgres, and conforming Parquet in MinIO via `manufacturing__conforming_archive`.
-- **Defect path**: republished to `quality.defects.major`, then enriched — ERP batch→supplier
+- **Defect path**: republished to `quality.defects.major`, then enriched - ERP batch→supplier
   join, HTTP classification, a JS step that flattens the `defect_codes` list to a clean
-  string, and a mandatory quarantine call (3× exponential-backoff retry) — before landing in
+  string, and a mandatory quarantine call (3× exponential-backoff retry) - before landing in
   `defective_parts` with a `quarantine_id`.
 - **Severity fan-out**: a Stream Selector splits CRITICAL / MAJOR / MINOR. CRITICAL → Teams +
   Jira; MAJOR → Teams; MINOR → email. Every CRITICAL/MAJOR also hits the WireMock audit sink.
 - **Rollup gate**: a stateful JavaScript stage caps outbound Teams/Jira calls to one per line
-  per 5-minute window and carries the suppressed count onto the next alert — this is what
+  per 5-minute window and carries the suppressed count onto the next alert - this is what
   keeps the Teams connector and Jira from being flooded, without dropping any audit data.
 - **2-hour SLA loop**: `qtp sla scan` polls `defective_parts` for parts past the window with
   no completed traceability and escalates (CRITICAL alert + Jira ticket).

@@ -1,6 +1,6 @@
 # dev -> prod connection mapping (used Day 6 by `qtp pipelines promote`).
 # Connections follow the workspace convention: {industry}__{system}__{env}.
-# Credentials live in Control Hub as runtime parameters — never in these files.
+# Credentials live in Control Hub as runtime parameters - never in these files.
 environments:
   dev:
     label: "env:dev"

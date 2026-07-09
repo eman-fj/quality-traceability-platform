@@ -1,6 +1,6 @@
 {
   "uid": "qtp-quality",
-  "title": "QTP — Manufacturing Quality Command Centre",
+  "title": "QTP - Manufacturing Quality Command Centre",
   "tags": ["qtp", "manufacturing", "iso9001"],
   "timezone": "browser",
   "schemaVersion": 39,
@@ -56,13 +56,13 @@
         "rawSql": "WITH r AS (SELECT line_id, 0 d FROM quality.conforming_parts UNION ALL SELECT line_id, 1 FROM quality.defective_parts) SELECT line_id AS metric, round(100.0 * sum(d) / NULLIF(count(*), 0), 2) AS \"Defect rate\" FROM r GROUP BY line_id ORDER BY line_id" } ]
     },
     {
-      "id": 6, "type": "bargauge", "title": "Top defect codes — this shift",
+      "id": 6, "type": "bargauge", "title": "Top defect codes - this shift",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
       "datasource": { "type": "postgres", "uid": "qtp-postgres" },
       "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "continuous-YlRd" } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
       "targets": [ { "refId": "A", "format": "table", "datasource": { "type": "postgres", "uid": "qtp-postgres" },
-        "rawSql": "SELECT code AS metric, count(*)::int AS value FROM quality.defective_parts, jsonb_array_elements_text(defect_codes) AS code WHERE inspection_timestamp::timestamptz::date = current_date AND shift = (CASE WHEN extract(hour FROM now()) BETWEEN 6 AND 13 THEN 'A' WHEN extract(hour FROM now()) BETWEEN 14 AND 21 THEN 'B' ELSE 'C' END) GROUP BY code ORDER BY value DESC LIMIT 3" } ]
+        "rawSql": "SELECT trim(code) AS metric, count(*)::int AS value FROM quality.defective_parts, unnest(string_to_array(defect_codes_str, ',')) AS code WHERE defect_codes_str IS NOT NULL AND defect_codes_str <> '' AND inspection_timestamp::timestamptz::date = current_date AND shift = (CASE WHEN extract(hour FROM now()) BETWEEN 6 AND 13 THEN 'A' WHEN extract(hour FROM now()) BETWEEN 14 AND 21 THEN 'B' ELSE 'C' END) GROUP BY trim(code) ORDER BY value DESC LIMIT 3" } ]
     },
     {
       "id": 7, "type": "timeseries", "title": "Defects over time, per line",
@@ -71,7 +71,7 @@
       "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [ { "refId": "A", "format": "time_series", "datasource": { "type": "postgres", "uid": "qtp-postgres" },
-        "rawSql": "SELECT $__timeGroupAlias(inspection_timestamp::timestamptz, '1h') AS time, line_id AS metric, count(*)::int AS defects FROM quality.defective_parts WHERE $__timeFilter(inspection_timestamp::timestamptz) GROUP BY 1, line_id ORDER BY 1" } ]
+        "rawSql": "SELECT $__timeGroupAlias(ts, '1h'), line_id AS metric, count(*)::int AS defects FROM (SELECT inspection_timestamp::timestamptz AS ts, line_id FROM quality.defective_parts) s WHERE $__timeFilter(ts) GROUP BY 1, line_id ORDER BY 1" } ]
     },
     {
       "id": 8, "type": "table", "title": "Supplier defect correlation (top 5)",

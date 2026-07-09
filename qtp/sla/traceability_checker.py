@@ -1,24 +1,24 @@
-"""traceability_checker.py — ISO 9001 two-hour traceability SLA enforcement.
+"""traceability_checker.py - ISO 9001 two-hour traceability SLA enforcement.
 
 A defective part must be traceable back to its raw-material supplier and batch
-certificate within **2 hours** of defect detection — a legal requirement under EU
+certificate within **2 hours** of defect detection - a legal requirement under EU
 product-liability law and an ISO 9001 audit control. This script proves and enforces
 that SLA against the data the `manufacturing__defect_enrichment` pipeline produces:
 
-  * ``check --part <id>`` — reconstructs the full traceability chain
+  * ``check --part <id>`` - reconstructs the full traceability chain
     (part → batch → supplier → certificate) for one part, determines whether
     traceability completed inside the 2-hour window, and emits a structured JSON
     report (the artifact attached to a Jira ticket). On breach it fires a CRITICAL
     alert and auto-creates a Jira compliance ticket.
 
-  * ``scan`` — intended to run on a 15-minute schedule; finds every defective part
+  * ``scan`` - intended to run on a 15-minute schedule; finds every defective part
     whose traceability breached the 2-hour SLA (or is incomplete and past the
     window) and raises a CRITICAL alert + Jira ticket for each (capped to avoid
     flooding), then prints a summary.
 
 Pure Python + SQL against Postgres `quality.defective_parts`; the CRITICAL alert and
 Jira ticket go to the WireMock-stubbed external APIs in the docker environment
-(endpoints/credentials come from .env — nothing hardcoded).
+(endpoints/credentials come from .env - nothing hardcoded).
 """
 
 import json
@@ -90,7 +90,7 @@ def _iso(value) -> str | None:
 
 def _json_default(o):
     """JSON encoder fallback: psycopg2 returns NUMERIC as Decimal and timestamps as
-    datetime — coerce both to JSON-friendly types."""
+    datetime - coerce both to JSON-friendly types."""
     if isinstance(o, Decimal):
         return float(o)
     if isinstance(o, datetime):
@@ -150,7 +150,7 @@ def fire_alert_and_ticket(report: dict) -> dict:
     """On an SLA breach: send a CRITICAL alert and auto-create a Jira ticket.
 
     Both go to the WireMock-stubbed APIs. Failures are logged but never crash the
-    check — a missing webhook must not stop SLA monitoring.
+    check - a missing webhook must not stop SLA monitoring.
     """
     base = wiremock_base_url()
     part_id = report["part_id"]
@@ -216,7 +216,7 @@ def check_part(part_id: str) -> int:
     if report["sla"]["status"] == "BREACHED":
         report["enforcement"] = fire_alert_and_ticket(report)
         log.warning(
-            "SLA BREACH on %s (%.1f min) — alert sent=%s, jira=%s",
+            "SLA BREACH on %s (%.1f min) - alert sent=%s, jira=%s",
             part_id, report["sla"]["duration_minutes"] or -1,
             report["enforcement"]["alert_sent"], report["enforcement"]["jira_ticket"],
         )
@@ -237,7 +237,7 @@ def scan(max_alerts: int = 10) -> int:
         conn.close()
 
     if not breaches:
-        log.info("No traceability SLA breaches — all defective parts traced within %d min.",
+        log.info("No traceability SLA breaches - all defective parts traced within %d min.",
                  SLA_MINUTES)
         return 0
 
@@ -246,7 +246,7 @@ def scan(max_alerts: int = 10) -> int:
     fired = 0
     for row in breaches:
         report = build_report(row)
-        # An incomplete breach (traceability never completed) has no duration — show the
+        # An incomplete breach (traceability never completed) has no duration - show the
         # SLA status instead of trying to format None as a number.
         duration = report["sla"]["duration_minutes"]
         dur = f"{duration:>8}" if duration is not None else f"{report['sla']['status']:>8}"

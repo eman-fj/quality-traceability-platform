@@ -6,7 +6,7 @@ error-record format (which preserves the error.* header attributes). This pipeli
 them back, enriches each with the shared **dead_letter_queue_handler** fragment (stamping
 dlq_source_pipeline / dlq_error_stage / dlq_error_message / dlq_error_code /
 dlq_error_timestamp from those attributes), and writes the recovery metadata to
-quality.dlq_recovery so failures are auditable and recoverable — never silently dropped.
+quality.dlq_recovery so failures are auditable and recoverable - never silently dropped.
 
     Amazon S3 (MinIO kermit-error-dlq, SDC-record format)
         -> dead_letter_queue_handler   (stamp dlq_* recovery metadata)
@@ -14,11 +14,11 @@ quality.dlq_recovery so failures are auditable and recoverable — never silentl
         -> JDBC Producer               (Postgres quality.dlq_recovery)
 
 The DLQ objects are written in SDC record format (framed, not plain JSON), so the origin
-reads them as SDC_JSON — which reconstructs only the original record value and DISCARDS the
+reads them as SDC_JSON - which reconstructs only the original record value and DISCARDS the
 per-stage error metadata (errorStage/errorCode/errorMessage are gone on re-read; verified
 via preview). So instead of the (unrecoverable) error detail, recovery captures the failed
 record's identity: dlq_source_pipeline + dlq_error_timestamp from the fragment, plus the
-re-read record's part_id/line_id — enough to locate and reprocess the failed part.
+re-read record's part_id/line_id - enough to locate and reprocess the failed part.
 
 NOTE: S3 origin prefix/credentials attribute names vary by engine; confirm in the canvas.
 """

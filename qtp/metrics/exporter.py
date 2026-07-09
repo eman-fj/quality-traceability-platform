@@ -1,4 +1,4 @@
-"""exporter.py — `qtp metrics serve`, a Prometheus exporter for real pipeline-health metrics.
+"""exporter.py - `qtp metrics serve`, a Prometheus exporter for real pipeline-health metrics.
 
 Exposes, in Prometheus text format:
 
@@ -9,20 +9,23 @@ Exposes, in Prometheus text format:
     qtp_job_error_rate{job_name}                   error / input for the latest run (0..1)
     qtp_job_last_run_duration_seconds{job_name}    finish_time - start_time of the latest run
     qtp_alerts_fired_total{severity}               alerts posted (WireMock journal), by severity
-    qtp_jira_tickets_created_total                 Jira tickets created (WireMock journal)
+    qtp_jira_tickets_created_total                 real Jira tickets created in the last 24h
+                                                    (queried directly against Jira Cloud; falls
+                                                    back to the WireMock journal count if no real
+                                                    Jira credentials are configured)
 
 These are REAL StreamSets job metrics pulled through the Control Hub SDK session (the same
-SCH_URL/SCH_CRED_ID/SCH_TOKEN every other qtp command already authenticates with) — not a
+SCH_URL/SCH_CRED_ID/SCH_TOKEN every other qtp command already authenticates with) - not a
 proxy computed from the warehouse. The engine's own local /metrics REST API cannot be scraped
 directly: it is registered with Control Hub via DPM (`dpm.enabled=true` in the engine's
 sdc.properties), so unauthenticated requests to it redirect to a login page and there is no
 local username/password to supply. `Job.metrics` / `Job.history` give the same per-run record
 counts and timings the Control Hub UI's own job-metrics view shows, reached through the
-Control Hub API instead of the engine's local one — this is the "properly connected" path
+Control Hub API instead of the engine's local one - this is the "properly connected" path
 that doesn't need any extra engine-local credentials.
 
 `qtp metrics serve` runs indefinitely (the `qtp-metrics` docker-compose service Prometheus
-scrapes). `qtp metrics serve --once` prints one snapshot and exits — a quick health check.
+scrapes). `qtp metrics serve --once` prints one snapshot and exits - a quick health check.
 """
 
 import time
@@ -39,6 +42,51 @@ log = get_logger()
 DEFAULT_PORT = 9091
 
 
+def _real_jira_ticket_count(window_hours: int = 24):
+    """Real ticket count from Jira Cloud, or None if Jira isn't really configured yet.
+
+    The alerting pipeline posts CRITICAL tickets straight to Jira's REST API (see
+    qtp/pipelines/defect_enrichment.py's jira_http stage) - those calls never touch
+    WireMock, so the journal-based count is permanently blind to them. This queries
+    Jira directly instead. Scoped to the last `window_hours` (not a lifetime total) so
+    the number stays meaningful on a live dashboard rather than growing unbounded.
+    """
+    from ..common.env import job_runtime_secrets
+
+    secrets = job_runtime_secrets()
+    base = secrets.get("JIRA_BASE_URL") or ""
+    if not base or "wiremock" in base:
+        return None  # still pointed at the stub; nothing real to count
+    project = secrets.get("JIRA_PROJECT_KEY") or "QUAL"
+    auth = (secrets.get("JIRA_USER_EMAIL"), secrets.get("JIRA_API_TOKEN"))
+    if not auth[0] or not auth[1]:
+        return None
+
+    import requests
+
+    try:
+        # Jira Cloud's newer /search/jql endpoint is cursor-paginated and has no "total"
+        # field (and rejects maxResults=0) - count returned issues instead. 250 is well
+        # above realistic ticket volume for a 24h window; if isLast is False there were
+        # more than that, so this becomes a floor rather than an exact count.
+        r = requests.get(
+            f"{base}/rest/api/3/search/jql",
+            params={"jql": f"project = {project} AND created >= -{window_hours}h",
+                    "maxResults": 250, "fields": "created"},
+            auth=auth, timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
+        count = len(data.get("issues", []))
+        if not data.get("isLast", True):
+            log.debug("Jira ticket count for %sh window hit the 250-result page cap; "
+                      "reporting %d as a floor, not an exact count.", window_hours, count)
+        return count
+    except Exception as exc:  # noqa: BLE001 - Jira unreachable/misconfigured; fall back upstream
+        log.debug("Could not query Jira for ticket count: %s", exc)
+        return None
+
+
 def _latest_run_metrics(job):
     """The latest run's JobMetrics, or None if the job has never run."""
     try:
@@ -53,7 +101,7 @@ def _latest_run_duration_seconds(job):
     """Seconds between start_time and finish_time of the most recent completed run, if known.
 
     Both are raw millisecond epoch integers on JobStatus (confirmed live: subtracting them
-    as datetimes raised AttributeError) — matching how Job.start_time itself converts the
+    as datetimes raised AttributeError) - matching how Job.start_time itself converts the
     same raw field (`self._data['currentJobStatus']['startTime'] / 1000`).
     """
     try:
@@ -89,7 +137,7 @@ def _is_active(job) -> bool:
 
 class QtpCollector:
     """A prometheus_client Collector: computes fresh values on every scrape (pull-based),
-    rather than caching gauges between scrapes — avoids ever serving stale numbers."""
+    rather than caching gauges between scrapes - avoids ever serving stale numbers."""
 
     def __init__(self, sch, flows=None):
         self.sch = sch
@@ -138,14 +186,15 @@ class QtpCollector:
         yield from self._alert_history_metrics()
 
     def _alert_history_metrics(self):
-        """Alert/Jira counts from the WireMock request journal — real actions actually
-        fired (or, once Teams/Jira are wired with real credentials, this reads from the
-        same journal only while WireMock is still in the loop for local demos)."""
+        """Alert counts from the WireMock request journal (the audit-sink dispatcher fragment
+        still posts every CRITICAL/MAJOR there regardless of where Teams/Jira really go), plus
+        a real Jira ticket count read directly from Jira Cloud."""
         from ..demo.evidence import wiremock_journal
 
         alerts = GaugeMetricFamily("qtp_alerts_fired_total", "Alerts posted, by severity",
                                    labels=["severity"])
-        jira = GaugeMetricFamily("qtp_jira_tickets_created_total", "Jira tickets created")
+        jira = GaugeMetricFamily("qtp_jira_tickets_created_total",
+                                 "Jira tickets created in the last 24h")
         try:
             journal = wiremock_journal()
         except Exception as exc:  # noqa: BLE001 - WireMock unreachable; report zero, don't crash
@@ -158,7 +207,13 @@ class QtpCollector:
             by_severity[sev] = by_severity.get(sev, 0) + 1
         for sev, count in by_severity.items():
             alerts.add_metric([sev], count)
-        jira.add_metric([], len(journal.get("jira_tickets", [])))
+
+        jira_count = _real_jira_ticket_count(window_hours=24)
+        if jira_count is None:
+            # No real Jira configured (still pointed at the WireMock stub) - fall back to
+            # the journal so this metric isn't just silently missing in a pure-demo setup.
+            jira_count = len(journal.get("jira_tickets", []))
+        jira.add_metric([], jira_count)
 
         yield alerts
         yield jira

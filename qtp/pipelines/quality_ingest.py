@@ -1,6 +1,6 @@
 """Pipeline: manufacturing__quality_ingest.
 
-Stage A — Ingest + enrich + route:
+Stage A - Ingest + enrich + route:
 
     Kafka (quality.inspections)
         -> kafka_header_enricher   (standard metadata headers)
@@ -10,7 +10,7 @@ Stage A — Ingest + enrich + route:
              -> defect lane : Kafka Producer (quality.defects.major)   [enrich in defect_enrichment]
              -> clean lane  : JDBC Producer  (quality.conforming_parts)
 
-Stage B — Resilience + compliance:
+Stage B - Resilience + compliance:
 
     Error records -> Amazon S3 (MinIO kermit-error-dlq)
     Pipeline stop -> audit_log_writer fragment (JDBC Producer -> quality.pipeline_audit)
@@ -19,7 +19,7 @@ Routing rule: a record is a DEFECT if it has any defect code, detected with
 `${record:exists('/defect_codes[0]')}`. Everything else is the default (clean) lane.
 
 The three inline enrichment fragments are shared, published Control Hub fragments.
-Connections and credentials are runtime parameters — nothing is hardcoded.
+Connections and credentials are runtime parameters - nothing is hardcoded.
 The dead_letter_queue_handler fragment stamps dlq_* fields on error records in the DLQ
 recovery pipeline that reads from kermit-error-dlq; it is not needed here.
 """
@@ -68,7 +68,7 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         line_filter.predicates = [f"${{record:value('/line_id') == '{line_id}'}}", "default"]
         line_trash = builder.add_stage("Trash")
 
-    # --- Stage A: inline enrichment — pull published shared fragments and chain them -
+    # --- Stage A: inline enrichment - pull published shared fragments and chain them -
     enrichers = []
     for frag_name in INLINE_FRAGMENTS:
         fragment = resolve_fragment(sch, frag_name)
@@ -80,19 +80,19 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
     #   lane 0 → records with a defect code (DEFECT); lane 1 → default (clean/conforming).
     selector.predicates = ["${record:exists('/defect_codes[0]')}", "default"]
 
-    # --- Stage A: defect lane — publish to defects topic (enriched by defect_enrichment)
+    # --- Stage A: defect lane - publish to defects topic (enriched by defect_enrichment)
     defect_out = builder.add_stage("Kafka Producer")
     set_config(defect_out, topic="quality.defects.major", data_format="JSON", broker_uri="${KAFKA_BROKER}")
     apply_connection(defect_out, sch, "manufacturing__kafka__dev")
 
-    # --- Stage A: clean lane — strip non-column fields, then write to Postgres --------
+    # --- Stage A: clean lane - strip non-column fields, then write to Postgres --------
     # The JDBC Producer auto-maps every record field to a same-named column. Drop the
     # fields conforming_parts can't take:
     #   - defect_codes / dq_score / dq_status / dq_checked_at : no such columns
     #   - measurements : a nested JSON object; the JDBC Producer can't coerce a MAP into
     #     a scalar/JSONB column (it would fail like the timestamp did)
     # The remaining fields map 1:1 to the table (part_id, line_id, inspection_timestamp,
-    # material_batch_id, operator_id, shift, schema_version) — the team's auto-map pattern.
+    # material_batch_id, operator_id, shift, schema_version) - the team's auto-map pattern.
     field_remover = builder.add_stage("Field Remover")
     set_first(
         field_remover,
@@ -116,7 +116,7 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
     # --- Stage B: DLQ error stage → MinIO kermit-error-dlq --------------------------
     # Label confirmed from canvas Error Records dropdown: "Write to Amazon S3".
     # Error record policy set to "AT_CURRENTLY_FAILED_STAGE" so the record carries all
-    # enrichment (DQ score, schema version, header attrs) applied before the failure —
+    # enrichment (DQ score, schema version, header attrs) applied before the failure -
     # matching the dlq_* fields the dead_letter_queue_handler fragment would add.
     dlq = builder.add_error_stage(label="Write to Amazon S3")
     set_config(
@@ -134,14 +134,14 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
         use_path_style_address_model=True,
     )
     # This error-stage variant ("ToErrorAmazonS3DTarget") reports supported_connection_types
-    # as None — unlike the regular "Amazon S3" destination/origin, which both support
-    # STREAMSETS_AWS_S3 — but the `.connection` attribute exists and accepts a value. Attempt
+    # as None - unlike the regular "Amazon S3" destination/origin, which both support
+    # STREAMSETS_AWS_S3 - but the `.connection` attribute exists and accepts a value. Attempt
     # it anyway; `qtp pipelines validate` after rebuild is the real test of whether the
     # engine accepts it. If validation rejects it, this line is the one to revert (falls back
     # to the MANUAL params above, which keep working either way).
     apply_connection(dlq, sch, "manufacturing__minio__dev", fallback_note="error-stage variant may not support connections")
 
-    # --- Stage B: audit stop event (PENDING — lifecycle label needs canvas verification) --
+    # --- Stage B: audit stop event (PENDING - lifecycle label needs canvas verification) --
     # add_stop_event_stage() requires pipelineLifecycleStage=True in the engine's stage
     # catalog. "JDBC Producer" passes the label check but has no lifecycle-flagged definition
     # on this engine (StopIteration → blank [ERROR]). To find the accepted label: open any
@@ -178,7 +178,7 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
     pipeline = builder.build(full_name, description=__doc__.split("\n")[0], labels=labels)
 
     # Capture the record as it looked at the failing stage (post-enrichment), not the
-    # raw origin record — so DQ scores, schema version, and header attrs are preserved
+    # raw origin record - so DQ scores, schema version, and header attrs are preserved
     # in the DLQ bucket for lossless recovery. Pipeline-level config is set via the
     # Configuration object, not set_config (which only handles stage attributes).
     try:
@@ -189,7 +189,7 @@ def build(sch, engine_id, name=None, line_id=None, env="dev"):
     # Runtime parameters: docker-stack defaults (qtp_qtp network hostnames).
     # Fragment params (SOURCE_SYSTEM / ENVIRONMENT / SCHEMA_VERSION) feed the inline
     # enrichment fragments. Audit params feed the stop event writer (pending label fix).
-    # NOTE: must be .update(), not `=` — add_fragment() has already promoted each
+    # NOTE: must be .update(), not `=` - add_fragment() has already promoted each
     # fragment's own prefixed parameters (e.g. kafka_01_KAFKA_SOURCE_SYSTEM,
     # schem_01_SCHEMA_VERSION) onto pipeline.parameters; a plain assignment here wipes
     # them out, leaving every enrichment EL expression unresolved (EXPR_03 on every record).

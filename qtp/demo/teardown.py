@@ -1,13 +1,13 @@
-"""teardown.py — undo a demo run.
+"""teardown.py - undo a demo run.
 
 Removes the demo's own footprint so the warehouse returns to whatever real state it had
 before `qtp demo run`:
 
   * deletes every ``DEMO-*`` row the seeder created (conforming, defective, quarantine, and
-    the demo's pipeline_audit row) — reuses the seeder's reset so the two never drift;
+    the demo's pipeline_audit row) - reuses the seeder's reset so the two never drift;
   * optionally stops the Control Hub jobs the live overlay may have started (--stop-jobs).
 
-It only ever touches data it created (the ``DEMO-*`` namespace) — real pipeline output is
+It only ever touches data it created (the ``DEMO-*`` namespace) - real pipeline output is
 left untouched. The WireMock request journal is left for inspection unless --clear-journal.
 """
 

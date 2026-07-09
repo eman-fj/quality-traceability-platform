@@ -1,12 +1,12 @@
 """Deterministic fragment resolution for the shared Control Hub workspace.
 
-The workspace is shared, and Control Hub does not enforce unique names — two members
+The workspace is shared, and Control Hub does not enforce unique names - two members
 can publish an object with the same fragment name, and (as happened here) a teammate
 can publish further versions directly onto *our* fragment's pipeline id. Pinning by bare
 pipeline id is NOT safe against that second case: ``sch.pipelines.get(id=...)`` always
 resolves to the LATEST commit under that id, so a teammate's later republish (including
 a rewrite to a different stage type) silently becomes what every consuming pipeline embeds
-next time it's built — with no error, no warning.
+next time it's built - with no error, no warning.
 
 config/fragment_pins.yaml pins each fragment by ``pipeline_id`` plus an optional ``tag``:
 
@@ -21,7 +21,7 @@ config/fragment_pins.yaml pins each fragment by ``pipeline_id`` plus an optional
 A ``tag`` is a Control Hub tag applied to one specific commit (Pipeline canvas -> version
 history -> tag icon). Resolving via tag looks up that tag's commit_id and fetches exactly
 that version, so it keeps working even if someone else publishes v7, v8, ... on top.
-Without a tag, resolution falls back to the pipeline id (latest version) — fine only until
+Without a tag, resolution falls back to the pipeline id (latest version) - fine only until
 another author touches that same fragment. A bare pin id string (old format) is still
 accepted for backward compatibility.
 """
@@ -63,7 +63,7 @@ def resolve_fragment(sch, name: str):
                  "immune to later republishes).", name, tag_name, tag.commit_id)
         return sch.pipelines.get(commit_id=tag.commit_id, fragment=True)
 
-    log.info("Resolving fragment '%s' by pinned id %s (latest version — no tag pin; "
+    log.info("Resolving fragment '%s' by pinned id %s (latest version - no tag pin; "
              "a republish by another author WILL change what gets embedded).",
              name, pipeline_id)
     return sch.pipelines.get(id=pipeline_id, fragment=True)

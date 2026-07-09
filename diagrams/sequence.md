@@ -36,7 +36,7 @@ sequenceDiagram
 
     par Severity fan-out (CRITICAL)
         ENR->>WM: audit alert (dispatcher fragment)
-        ENR->>ENR: rollup gate — first in window? emit : count
+        ENR->>ENR: rollup gate - first in window? emit : count
         ENR->>TEAMS: POST Adaptive Card (+N rolled-up if any)
         ENR->>JIRA: POST /rest/api/3/issue (ADF description)
         JIRA-->>ENR: 201 Created (QUAL-####)
@@ -45,8 +45,8 @@ sequenceDiagram
     Note over PG,SLA: continuous compliance loop
     SLA->>PG: scan defective_parts past 2h w/o completed traceability
     alt breach risk
-        SLA->>JIRA: escalate — create SLA-breach ticket
-        SLA->>TEAMS: escalate — CRITICAL alert
+        SLA->>JIRA: escalate - create SLA-breach ticket
+        SLA->>TEAMS: escalate - CRITICAL alert
     else within SLA
         SLA-->>SLA: traceability chain complete (part → batch → supplier → certificate)
     end
@@ -61,7 +61,7 @@ sequenceDiagram
 | classify | Deterministic severity → action | `defect_category`, `recommended_action` |
 | quarantine (retry ×3) | Mandatory quarantine of CRITICAL/MAJOR | `quarantine_log`, `quarantine_id` |
 | rollup gate + fan-out | Severity-routed alerting, rate-capped | Teams card · Jira ticket · WireMock journal |
-| SLA scan | 2-hour traceability SLA | `traceability_completed_at − inspection_timestamp` |
+| SLA scan | 2-hour traceability SLA | `traceability_completed_at - inspection_timestamp` |
 
 Any stage failure routes the record to the MinIO **dead-letter queue** (visible, recoverable)
-rather than dropping it — so a downstream outage never silently loses a defect.
+rather than dropping it - so a downstream outage never silently loses a defect.

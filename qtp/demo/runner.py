@@ -1,4 +1,4 @@
-"""runner.py — `qtp demo run`, the single-command end-to-end demonstration.
+"""runner.py - `qtp demo run`, the single-command end-to-end demonstration.
 
 Runs the whole ISO 9001 story as a sequence of narrated stages and finishes with a
 compliance scorecard mapped to the brief's controls and the scoring rubric:
@@ -75,7 +75,7 @@ def _critical_event() -> dict:
 
 def _inject_via_docker(event: dict, topic: str) -> tuple[bool, str]:
     """Fallback path: publish through the Kafka container's console producer (no host
-    kafka client needed — only the Docker CLI, which is already present since the stack runs)."""
+    kafka client needed - only the Docker CLI, which is already present since the stack runs)."""
     import json
     import subprocess
 
@@ -125,7 +125,7 @@ def start_jobs() -> tuple[bool, str]:
 
     Delegates to ``qtp.jobs.job_manager`` (verified against the installed SDK 7.x job API:
     ``sch.get_job_builder().build`` + ``sch.add_job`` + ``sch.start_job``). Opt-in and never
-    required for the deterministic demo to pass — needs a reachable engine.
+    required for the deterministic demo to pass - needs a reachable engine.
     """
     try:
         from ..jobs.job_manager import DEFAULT_FLOWS, start
@@ -141,7 +141,7 @@ def start_jobs() -> tuple[bool, str]:
 # ----------------------------------------------------------------------- summary
 def _print_summary(bundle: dict, paths: dict) -> None:
     """Print the compliance result for the run: the ISO 9001 controls and where the
-    evidence lives. (No stage checklist or rubric — the detail is in the evidence pack.)"""
+    evidence lives. (No stage checklist or rubric - the detail is in the evidence pack.)"""
     controls = bundle.get("compliance_controls", [])
     if not controls:
         return
@@ -199,7 +199,7 @@ def run(*, seed_data=True, reset=True, shift="A", date=None, email=None,
         preflight_mod.print_board(results)
         down = [r["service"] for r in results if r["required"] and not r["ok"]]
         if down:
-            log.error("Required service(s) down: %s — start the stack and re-run.", ", ".join(down))
+            log.error("Required service(s) down: %s - start the stack and re-run.", ", ".join(down))
             stages.record("preflight", False, "required services down: " + ", ".join(down))
             return 1
         stages.record("preflight", True, f"{sum(r['ok'] for r in results)}/{len(results)} services up")

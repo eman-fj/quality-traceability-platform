@@ -9,7 +9,7 @@ dedicated one-shot pipeline:
 
 The fragment stamps pipeline_name / run_ts / operator / environment / audit_metrics and
 writes one row to quality.pipeline_audit. Run it once per pipeline run (as a job), passing
-the run's metrics as the AUDIT_METRICS_JSON parameter — this satisfies the brief's
+the run's metrics as the AUDIT_METRICS_JSON parameter - this satisfies the brief's
 "audit_log_writer mandatory on all manufacturing pipelines" without duplicating the
 fragment's logic.
 
@@ -27,11 +27,11 @@ LABELS = ["industry:manufacturing", "env:dev"]
 # Local-dev audit warehouse. Credentials are embedded in the JDBC URL so the fragment's
 # JDBC Producer needs no separate cred params.
 # NOTE (checked): the audit_log_writer fragment's inner JDBC Producer cannot be pointed at a
-# Control Hub named connection from here — fragments are opaque to the outer pipeline builder
+# Control Hub named connection from here - fragments are opaque to the outer pipeline builder
 # (the wrapper object the SDK returns from add_fragment() has no `.connection` attribute;
 # verified: hasattr(audit, "connection") is False). Only a stage added directly with
 # add_stage()/add_error_stage() exposes `.connection`. Wiring this would need the fragment
-# itself republished with its JDBC Producer's connection field declared as promotable — out
+# itself republished with its JDBC Producer's connection field declared as promotable - out
 # of scope here since it's a teammate's shared fragment, not ours to edit.
 _AUDIT_JDBC_URL = "jdbc:postgresql://postgres:5432/quality?user=qtp&password=qtp_pw"
 _AUDIT_DEFAULTS = {

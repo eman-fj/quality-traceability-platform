@@ -1,7 +1,7 @@
 """Host-side connection settings for the SDK scripts (read from .env).
 
 The SDK scripts (traceability_checker, shift_quality_report) run on the host, so
-they reach the dockerised services on the remapped HOST ports from .env — not the
+they reach the dockerised services on the remapped HOST ports from .env - not the
 in-network ports the pipelines use. Nothing is hardcoded; values come from .env
 with the compose defaults as fallback.
 """
@@ -68,7 +68,7 @@ def job_runtime_secrets() -> dict:
 
     These must never be baked into a pipeline's own `pipeline.parameters` (that dict is
     published with the pipeline and lands verbatim in `qtp pipelines export`'s JSON, which
-    is committed to the repo under /pipelines — see Master Programme Doc §9.2: "Connection
+    is committed to the repo under /pipelines - see Master Programme Doc §9.2: "Connection
     credentials are stored as Control Hub runtime parameters and injected at job execution
     time," not baked into the pipeline definition). Instead, `qtp jobs create` passes this
     dict as the JOB's `runtime_parameters` at job-creation time; the published pipeline only

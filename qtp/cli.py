@@ -60,7 +60,7 @@ def cmd_fragments_list(args) -> int:
     sch = get_control_hub()
     fragments = sch.pipelines.get_all(fragment=True)
     # OWNED = name is in our local builder registry (NOT real Control Hub ownership).
-    # ID is the stable Control Hub object id — use it to pin a fragment in
+    # ID is the stable Control Hub object id - use it to pin a fragment in
     # config/fragment_pins.yaml when the name collides with a teammate's copy.
     print(f"{'FRAGMENT':40} {'OWNED':6} {'VERSION':8} ID")
     owned = set(FRAGMENT_BUILDERS)
@@ -430,7 +430,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("--no-archive", action="store_true", help="skip writing the combined importable .zip")
     p_export.set_defaults(func=cmd_pipelines_export)
 
-    # sla (implemented) — 2-hour ISO 9001 traceability compliance
+    # sla (implemented) - 2-hour ISO 9001 traceability compliance
     sla = groups.add_parser("sla", help="Traceability 2-hour SLA enforcement (ISO 9001)")
     sla_actions = sla.add_subparsers(dest="action", required=True, metavar="<action>")
     s_check = sla_actions.add_parser("check", help="full traceability + SLA report for one part")
@@ -440,7 +440,7 @@ def build_parser() -> argparse.ArgumentParser:
     s_scan.add_argument("--max-alerts", type=int, default=10, help="cap alerts per scan (default 10)")
     s_scan.set_defaults(func=cmd_sla_scan)
 
-    # monitor (implemented) — operational compliance checks
+    # monitor (implemented) - operational compliance checks
     monitor = groups.add_parser("monitor", help="Operational monitoring / compliance checks")
     monitor_actions = monitor.add_subparsers(dest="action", required=True, metavar="<action>")
     m_dr = monitor_actions.add_parser("defect-rate", help="per-line defect-rate check (CRITICAL alert if >2%)")
@@ -448,7 +448,7 @@ def build_parser() -> argparse.ArgumentParser:
     m_dr.add_argument("--threshold", type=float, default=2.0, help="defect-rate %% ceiling (default 2.0)")
     m_dr.set_defaults(func=cmd_monitor_defect_rate)
 
-    # report (implemented) — end-of-shift quality report
+    # report (implemented) - end-of-shift quality report
     import datetime as _dt
     report = groups.add_parser("report", help="Operational quality reports")
     report_actions = report.add_subparsers(dest="action", required=True, metavar="<action>")
@@ -458,7 +458,7 @@ def build_parser() -> argparse.ArgumentParser:
     r_shift.add_argument("--email", default="quality.manager@kermit.local", help="quality manager email")
     r_shift.set_defaults(func=cmd_report_shift)
 
-    # demo (implemented) — single-command end-to-end compliance demonstration
+    # demo (implemented) - single-command end-to-end compliance demonstration
     demo = groups.add_parser("demo", help="One-command end-to-end compliance demonstration")
     demo_actions = demo.add_subparsers(dest="action", required=True, metavar="<action>")
     d_run = demo_actions.add_parser("run", help="preflight -> seed -> compliance suite -> evidence -> scorecard")
@@ -481,13 +481,13 @@ def build_parser() -> argparse.ArgumentParser:
     d_seed.add_argument("--no-reset", action="store_true", help="upsert without wiping prior DEMO-* rows")
     d_seed.set_defaults(func=cmd_demo_seed)
 
-    # preflight (implemented) — service health board
+    # preflight (implemented) - service health board
     preflight = groups.add_parser("preflight", help="Service health board (run before a demo)")
     pf_actions = preflight.add_subparsers(dest="action", required=True, metavar="<action>")
     pf_run = pf_actions.add_parser("run", help="probe every service and print GREEN/RED board")
     pf_run.set_defaults(func=cmd_preflight_run)
 
-    # evidence (implemented) — compliance evidence pack (JSON + HTML)
+    # evidence (implemented) - compliance evidence pack (JSON + HTML)
     evidence = groups.add_parser("evidence", help="Assemble the compliance evidence pack")
     ev_actions = evidence.add_subparsers(dest="action", required=True, metavar="<action>")
     ev_pack = ev_actions.add_parser("pack", help="aggregate warehouse + WireMock journal -> JSON + HTML")
@@ -495,7 +495,7 @@ def build_parser() -> argparse.ArgumentParser:
     ev_pack.add_argument("--out", help="output directory (default: evidence/pack-<timestamp>)")
     ev_pack.set_defaults(func=cmd_evidence_pack)
 
-    # schedule (implemented) — recurring compliance cadence
+    # schedule (implemented) - recurring compliance cadence
     schedule = groups.add_parser("schedule", help="Run or install the recurring compliance cadence")
     sc_actions = schedule.add_subparsers(dest="action", required=True, metavar="<action>")
     sc_run = sc_actions.add_parser("run", help="run the cadence in this process (monitor + SLA + report)")
@@ -509,7 +509,7 @@ def build_parser() -> argparse.ArgumentParser:
     sc_install.add_argument("--sla-interval", type=int, default=15)
     sc_install.set_defaults(func=cmd_schedule_install)
 
-    # connections (implemented) — Control Hub named Connections (Master §9.2)
+    # connections (implemented) - Control Hub named Connections (Master §9.2)
     connections = groups.add_parser("connections", help="Control Hub named Connections (Master §9.2)")
     conn_actions = connections.add_subparsers(dest="action", required=True, metavar="<action>")
     c_create = conn_actions.add_parser("create", help="create the manufacturing__* named connections")
@@ -521,7 +521,7 @@ def build_parser() -> argparse.ArgumentParser:
     c_list = conn_actions.add_parser("list", help="list the manufacturing__* named connections")
     c_list.set_defaults(func=cmd_connections_list)
 
-    # metrics (implemented) — Prometheus exporter for real StreamSets job metrics
+    # metrics (implemented) - Prometheus exporter for real StreamSets job metrics
     metrics = groups.add_parser("metrics", help="Prometheus exporter for real pipeline-health metrics")
     metrics_actions = metrics.add_subparsers(dest="action", required=True, metavar="<action>")
     m_serve = metrics_actions.add_parser("serve", help="serve /metrics for Prometheus to scrape")
@@ -529,7 +529,7 @@ def build_parser() -> argparse.ArgumentParser:
     m_serve.add_argument("--once", action="store_true", help="print one snapshot and exit")
     m_serve.set_defaults(func=cmd_metrics_serve)
 
-    # jobs (implemented) — Control Hub job lifecycle for the live path
+    # jobs (implemented) - Control Hub job lifecycle for the live path
     jobs = groups.add_parser("jobs", help="Control Hub job lifecycle (status/create/start/stop)")
     j_actions = jobs.add_subparsers(dest="action", required=True, metavar="<action>")
     j_status = j_actions.add_parser("status", help="status board for the manufacturing jobs")
@@ -557,7 +557,7 @@ def build_parser() -> argparse.ArgumentParser:
                            help="stop/restart the job so the new parameters take effect immediately")
     j_update.set_defaults(func=cmd_jobs_update_parameters)
 
-    # teardown (implemented) — remove the demo's DEMO-* footprint
+    # teardown (implemented) - remove the demo's DEMO-* footprint
     teardown = groups.add_parser("teardown", help="Remove DEMO-* data (and optionally stop jobs)")
     t_actions = teardown.add_subparsers(dest="action", required=True, metavar="<action>")
     t_run = t_actions.add_parser("run", help="delete DEMO-* rows; real warehouse data untouched")

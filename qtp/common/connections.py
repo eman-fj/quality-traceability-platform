@@ -5,17 +5,17 @@ credentials in pipeline configs. Connection credentials are stored as Control Hu
 parameters and injected at job execution time."
 
 Today every pipeline stage sets its DB/API endpoint via a plain pipeline *parameter*
-(``${PG_JDBC_URL}`` etc.) — that satisfies "no literal value in the stage config", but the
+(``${PG_JDBC_URL}`` etc.) - that satisfies "no literal value in the stage config", but the
 parameter's own default value is still a plain string baked into the published pipeline
 (and into ``qtp pipelines export``'s committed JSON). A Control Hub **Connection** is a
 separate, centrally-managed, access-controlled object: a stage references it by ID
 (``stage.connection = <id>``) instead of carrying connection details itself at all.
 
 This module creates the connections QTP's stages support (verified against the installed
-SDK + this engine's actual connection-type schemas — see PROJECT_REPORT.md) and resolves
+SDK + this engine's actual connection-type schemas - see PROJECT_REPORT.md) and resolves
 them by name, mirroring ``qtp/common/fragments.py``'s pattern. ``apply_connection`` is a
 best-effort helper: if the named connection exists it's used; if not, the caller's existing
-MANUAL parameter-based wiring is left untouched — so pipelines upgrade to named connections
+MANUAL parameter-based wiring is left untouched - so pipelines upgrade to named connections
 automatically once they exist, without a flag day / without breaking anything if one is
 ever renamed or removed.
 """
@@ -50,13 +50,13 @@ def apply_connection(stage, sch, name: str, fallback_note: str = "") -> bool:
     """Point `stage` at the named Connection if it exists; else leave MANUAL wiring alone.
 
     Default ON. A stage bound to a named Connection validated cleanly once the engine had
-    settled after a restart — an earlier JDBC_INIT_50/56 failure turned out to be a transient
+    settled after a restart - an earlier JDBC_INIT_50/56 failure turned out to be a transient
     post-restart network state, NOT a flaw in the connections (they use the same host/creds as
     the manual params). Set QTP_USE_NAMED_CONNECTIONS=0 as an escape hatch to force the manual
     ${PARAM} wiring (e.g. immediately after an engine restart, before connection pools settle).
 
     If the named connection doesn't exist (fresh workspace), this falls back to the manual
-    wiring the caller already set — so nothing breaks before `qtp connections create` is run.
+    wiring the caller already set - so nothing breaks before `qtp connections create` is run.
 
     Returns True if the connection was applied (caller can skip setting manual params).
     """
@@ -81,7 +81,7 @@ def _build_postgres(sch, engine):
     conn = cb.build(title=_POSTGRES_NAME, connection_type="STREAMSETS_JDBC",
                     authoring_engine=engine, tags=["industry:manufacturing", "env:dev"])
     cfg = conn.connection_definition.configuration
-    # In-network hostname (matches every pipeline's existing PG_JDBC_URL default) — p["host"]
+    # In-network hostname (matches every pipeline's existing PG_JDBC_URL default) - p["host"]
     # from pg_conn_params() is the HOST-remapped address (localhost:5434 etc.), not usable
     # from inside the docker network the engine runs in.
     cfg["connectionString"] = f"jdbc:postgresql://postgres:5432/{p['dbname']}"

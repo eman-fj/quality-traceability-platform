@@ -1,6 +1,6 @@
 {
   "uid": "qtp-pipeline-health",
-  "title": "QTP — Pipeline Health (Prometheus)",
+  "title": "QTP - Pipeline Health (Prometheus)",
   "tags": ["qtp", "operational", "prometheus"],
   "timezone": "browser",
   "schemaVersion": 39,

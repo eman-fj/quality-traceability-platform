@@ -1,4 +1,4 @@
-"""job_manager.py — Control Hub job lifecycle (status / create / start / stop).
+"""job_manager.py - Control Hub job lifecycle (status / create / start / stop).
 
 Maps each core manufacturing flow to a Control Hub job following the workspace naming
 convention (brief §9.1):
@@ -62,7 +62,7 @@ def _resolve_pipeline(sch, name: str):
     matches = list(sch.pipelines.get_all(name=name))
     if not matches:
         raise RuntimeError(
-            f"Pipeline '{name}' not found in the workspace — build/publish it first "
+            f"Pipeline '{name}' not found in the workspace - build/publish it first "
             f"(qtp pipelines build --name {name.replace(PIPELINE_PREFIX, '')})."
         )
     if len(matches) > 1:
@@ -89,7 +89,7 @@ def status(flows=None) -> int:
 
 
 # Flows whose pipeline declares the real-alerting parameters (Teams/Jira). Only these get
-# job_runtime_secrets() injected — other flows' pipelines don't declare those parameter
+# job_runtime_secrets() injected - other flows' pipelines don't declare those parameter
 # names, and Control Hub jobs only accept runtime_parameters that match a declared name.
 _FLOWS_WITH_ALERT_SECRETS = {"defect_enrichment"}
 
@@ -114,7 +114,7 @@ def _runtime_parameters_for(flow: str) -> dict:
         log.warning("JIRA_API_TOKEN is not set in .env - job will use the WireMock "
                     "placeholder for Jira, not real ticket creation.")
     # The dispatcher (alert_01_MAINTENANCE_API_URL) intentionally stays on its WireMock
-    # default — it's the audit sink. The REAL Teams webhook goes to the dedicated Teams
+    # default - it's the audit sink. The REAL Teams webhook goes to the dedicated Teams
     # HTTP Client's TEAMS_ALERT_WEBHOOK_URL parameter.
     return {
         "TEAMS_ALERT_WEBHOOK_URL": teams_url or "http://wiremock:8080/alerts",
@@ -161,7 +161,7 @@ def _start(sch, flows, wait=False) -> int:
     for flow in flows:
         job = _find_job(sch, job_name(flow))
         if job is None:
-            log.warning("Job '%s' not found — run `qtp jobs create` first.", job_name(flow))
+            log.warning("Job '%s' not found - run `qtp jobs create` first.", job_name(flow))
             continue
         (already if _is_active(job) else to_start).append(job)
 
@@ -169,7 +169,7 @@ def _start(sch, flows, wait=False) -> int:
         log.info("Already running: %s", ", ".join(j.job_name for j in already))
     if not to_start:
         if already:
-            return 0  # everything is already up — nothing to do (idempotent, not an error)
+            return 0  # everything is already up - nothing to do (idempotent, not an error)
         log.error("No jobs to start.")
         return 1
     sch.start_job(*to_start, wait=wait)
@@ -206,7 +206,7 @@ def update_parameters(flows=None, restart=False) -> int:
         jname = job_name(flow)
         job = _find_job(sch, jname)
         if job is None:
-            log.warning("Job '%s' not found — nothing to update.", jname)
+            log.warning("Job '%s' not found - nothing to update.", jname)
             continue
         runtime_parameters = _runtime_parameters_for(flow)
         if not runtime_parameters:

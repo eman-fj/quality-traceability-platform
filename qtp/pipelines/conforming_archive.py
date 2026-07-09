@@ -13,7 +13,7 @@ to MinIO for long-term retention"), separate from the Postgres warehouse write i
 quality_ingest. It gives the s3_partition_formatter fragment its consuming pipeline.
 
 Connections/credentials are runtime parameters; the MinIO endpoint is the TLS endpoint
-(SDC's AWS SDK requires HTTPS — see certs/). Parquet uses an inferred Avro schema; if the
+(SDC's AWS SDK requires HTTPS - see certs/). Parquet uses an inferred Avro schema; if the
 engine needs an explicit schema, set it in the canvas.
 """
 

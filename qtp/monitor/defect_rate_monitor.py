@@ -1,4 +1,4 @@
-"""defect_rate_monitor.py — per-line defect-rate compliance check.
+"""defect_rate_monitor.py - per-line defect-rate compliance check.
 
 ISO 9001 compliance control: if a production line's defect rate exceeds 2% it must raise a
 CRITICAL alert (the brief's "CRITICAL: defect rate above 2%"). This check computes each
@@ -7,7 +7,7 @@ the threshold, fires a CRITICAL alert and auto-creates a Jira quality-investigat
 
 Intended to run on a short schedule (e.g. every few minutes). Pure Python + SQL over the
 data the StreamSets pipelines produce; alert + Jira go to the WireMock-stubbed APIs in the
-docker environment. Nothing hardcoded — endpoints come from .env.
+docker environment. Nothing hardcoded - endpoints come from .env.
 """
 
 import json
@@ -90,7 +90,7 @@ def check(window: int = DEFAULT_WINDOW, threshold: float = THRESHOLD_PCT) -> int
         conn.close()
 
     if not rates:
-        log.info("No parts found — nothing to evaluate.")
+        log.info("No parts found - nothing to evaluate.")
         return 0
 
     breaches = 0

@@ -1,7 +1,7 @@
-"""quality_pipeline_manager.py — SDK-driven pipeline fleet management.
+"""quality_pipeline_manager.py - SDK-driven pipeline fleet management.
 
 Generates, onboards, and promotes the per-line quality pipelines from configuration
-instead of building each one by hand in the UI — the core "use the SDK to automate and
+instead of building each one by hand in the UI - the core "use the SDK to automate and
 govern, not just build" capability:
 
   * generate : reads config/lines.yaml and, for every production line, builds and
@@ -9,7 +9,7 @@ govern, not just build" capability:
     applied during construction), named ``manufacturing__<flow>__<line_id>`` and
     labelled ``line:<line_id>``.
   * add-line : appends a new line to config/lines.yaml and generates its pair of
-    pipelines — onboarding a production line with a single command.
+    pipelines - onboarding a production line with a single command.
   * promote  : republishes a pipeline for a target environment using the env_map
     pattern (``env:prod`` label + the prod named-connection bindings), governing the
     dev -> prod path.
@@ -48,7 +48,7 @@ def _publish(sch, pipeline, draft: bool, replace: bool) -> None:
                 log.warning("Could not delete existing '%s' (%s).", name, exc)
         existing = []
     if existing:
-        log.info("Pipeline '%s' already exists — skipping (use --replace to recreate).", name)
+        log.info("Pipeline '%s' already exists - skipping (use --replace to recreate).", name)
         return
     sch.publish_pipeline(pipeline, commit_message=f"qtp: generate {name}", draft=draft)
     log.info("Published '%s'%s", name, " (draft)" if draft else "")

@@ -1,12 +1,12 @@
-"""pipeline_export.py — export published pipelines to importable JSON.
+"""pipeline_export.py - export published pipelines to importable JSON.
 
 Required deliverable (brief §7 / Master doc §5.1): every StreamSets pipeline exported as JSON
 into ``/pipelines``, importable directly into Control Hub. This pulls each published
 ``manufacturing__*`` pipeline from Control Hub via the SDK and writes:
 
-  * ``pipelines/<name>.json`` — one pretty-printed file per pipeline (exported per-pipeline so
+  * ``pipelines/<name>.json`` - one pretty-printed file per pipeline (exported per-pipeline so
     each file is named from the pipeline object itself, not a guessed archive entry), and
-  * ``pipelines/manufacturing__pipelines.zip`` — the combined export archive, the artifact you
+  * ``pipelines/manufacturing__pipelines.zip`` - the combined export archive, the artifact you
     import back into Control Hub in one shot.
 
 Read-only against Control Hub (``sch.export_pipelines`` returns the export bytes; nothing is

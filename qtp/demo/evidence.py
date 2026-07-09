@@ -1,4 +1,4 @@
-"""evidence.py — compliance evidence pack (the stretch "Compliance Audit Report").
+"""evidence.py - compliance evidence pack (the stretch "Compliance Audit Report").
 
 Aggregates, from a single command, everything an ISO 9001 auditor would ask to see after a
 run and writes it to a timestamped bundle:
@@ -14,7 +14,7 @@ run and writes it to a timestamped bundle:
 
 Output: ``evidence.json`` (machine-readable) and a self-contained ``evidence.html``
 (screenshot-ready for the slide deck / sign-off). Reuses the live SLA and monitor functions
-so the pack reflects exactly what those scripts compute — it is not a separate story.
+so the pack reflects exactly what those scripts compute - it is not a separate story.
 """
 
 import html
@@ -210,7 +210,7 @@ def render_html(bundle: dict) -> str:
                    for t in actions.get("jira_tickets", [])) or "<li>(none captured)</li>"
 
     chain = bundle.get("traceability_chain")
-    chain_html = "<p>(hero part not found — seed the demo first)</p>"
+    chain_html = "<p>(hero part not found - seed the demo first)</p>"
     if chain:
         c = chain["traceability_chain"]
         sla = chain["sla"]
@@ -248,13 +248,13 @@ def render_html(bundle: dict) -> str:
   ul {{ margin:0; padding-left:18px; font-size:13px }}
 </style></head><body>
 <header>
-  <h1>Quality &amp; Traceability Platform — Compliance Evidence Pack</h1>
+  <h1>Quality &amp; Traceability Platform - Compliance Evidence Pack</h1>
   <p>Generated {e(bundle['generated_at'])} on {e(bundle['host'])} · ISO 9001 production-line quality control</p>
 </header>
 <main>
   <section><h2>Compliance controls (brief §6)</h2>
     <table><tr><th>Control</th><th>Status</th><th>Evidence</th></tr>{rows}</table></section>
-  <section><h2>Traceability chain — hero CRITICAL part</h2>{chain_html}</section>
+  <section><h2>Traceability chain - hero CRITICAL part</h2>{chain_html}</section>
   <section><h2>Per-line defect rate (window 100, ceiling {THRESHOLD_PCT}%)</h2>
     <table><tr><th>Line</th><th>Rate</th><th>Defects</th><th>Status</th></tr>{rates}</table></section>
   <section><h2>External actions fired (WireMock journal)</h2>
@@ -276,7 +276,7 @@ def write_pack(bundle: dict, out_dir: str | Path) -> dict:
 
 
 def pack(part_id: str | None = None, out_dir: str | None = None) -> int:
-    """`qtp evidence pack` — collect and write the evidence bundle."""
+    """`qtp evidence pack` - collect and write the evidence bundle."""
     bundle = collect(part_id)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     target = out_dir or os.path.join("evidence", f"pack-{stamp}")
