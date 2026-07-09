@@ -1,92 +1,118 @@
-# QTP — Entity Relationship Diagram
+# QTP: Entity Relationship Diagram
 
-Two schemas: `quality` (Postgres — primary source/destination + audit) and `erp` (MySQL —
-simulated ERP for supplier traceability).
+Two databases span the traceability chain: **`erp`** (MySQL — simulated supplier/ERP system
+of record) and **`quality`** (Postgres — the quality warehouse: pipeline destinations, SLA
+state, audit). The join across the boundary is `defective_parts.material_batch_id →
+material_batches.batch_id`, resolved at runtime by the `defect_enrichment` JDBC Lookup.
+
+> Column types below are the *actual* deployed schema. Note `inspection_timestamp` is stored
+> as **TEXT** (StreamSets' JDBC Producer would not coerce the ISO-8601 string into a
+> `TIMESTAMP` column reliably, so the value is kept verbatim and cast in queries) — a real
+> engineering decision, documented rather than hidden.
 
 ```mermaid
 erDiagram
-    SUPPLIERS ||--o{ MATERIAL_BATCHES : "supplies"
+    SUPPLIERS ||--o{ MATERIAL_BATCHES : supplies
     MATERIAL_BATCHES ||--o{ DEFECTIVE_PARTS : "traced to"
     MATERIAL_BATCHES ||--o{ CONFORMING_PARTS : "used in"
     DEFECTIVE_PARTS ||--o| QUARANTINE_LOG : "quarantined as"
-    SUPPLIERS ||--o{ SUPPLIER_AUDIT : "rated in"
+    SUPPLIERS ||--o{ SUPPLIER_AUDIT : "risk-scored in"
 
     SUPPLIERS {
-        string supplier_id PK
-        string name
-        string country
-        string accreditation_status
+        varchar supplier_id PK
+        varchar name
+        varchar country
+        varchar accreditation_status
     }
     MATERIAL_BATCHES {
-        string batch_id PK
-        string supplier_id FK
-        string material_grade
-        string certificate_url
+        varchar batch_id PK
+        varchar supplier_id FK
+        varchar material_grade
+        varchar certificate_url
     }
     CONFORMING_PARTS {
-        string part_id PK
-        string line_id
-        timestamp inspection_timestamp
-        string material_batch_id FK
-        string operator_id
-        int schema_version
-        json measurements
+        text part_id
+        text line_id
+        text inspection_timestamp
+        text material_batch_id FK
+        text operator_id
+        text shift
+        jsonb measurements
+        integer schema_version
+        timestamptz ingested_at
     }
     DEFECTIVE_PARTS {
-        string part_id PK
-        string line_id
-        timestamp inspection_timestamp
-        string material_batch_id FK
-        string operator_id
-        json defect_codes
-        string defect_category
-        string recommended_action
-        string supplier_name
-        string material_grade
-        string certificate_url
-        string quarantine_id FK
-        timestamp traceability_completed_at
-        int schema_version
+        text part_id
+        text line_id
+        text inspection_timestamp
+        text material_batch_id FK
+        text operator_id
+        text shift
+        jsonb defect_codes
+        text defect_category
+        text recommended_action
+        text supplier_id
+        text supplier_name
+        text material_grade
+        text certificate_url
+        text quarantine_id FK
+        timestamptz traceability_completed_at
+        integer schema_version
+        timestamptz ingested_at
     }
     QUARANTINE_LOG {
-        string quarantine_id PK
-        string part_id FK
-        string status
-        timestamp registered_at
-        int retry_count
+        text quarantine_id PK
+        text part_id FK
+        text status
+        timestamptz registered_at
+        integer retry_count
     }
     SUPPLIER_AUDIT {
-        string supplier_id FK
-        int defect_count
-        float defect_correlation_score
-        timestamp window_start
-        timestamp window_end
+        text supplier_id FK
+        integer defect_count
+        numeric defect_correlation_score
+        timestamptz window_start
+        timestamptz window_end
     }
     SHIFT_REPORTS {
-        string report_id PK
-        string shift
+        text report_id PK
+        text shift
         date report_date
-        float conforming_rate
-        string minio_path
-        timestamp generated_at
+        numeric conforming_rate
+        text minio_path
+        timestamptz generated_at
     }
     PIPELINE_AUDIT {
-        string run_id PK
-        string pipeline_name
-        int record_count
-        int error_count
-        int critical_count
-        int traceability_lookups
-        int quarantine_registrations
-        string environment
-        timestamp run_at
+        bigint id PK
+        text pipeline_name
+        timestamptz run_ts
+        text operator
+        text environment
+        text audit_metrics
+        timestamptz recorded_at
+    }
+    DLQ_RECOVERY {
+        bigint id PK
+        text dlq_source_pipeline
+        text part_id
+        text line_id
+        timestamptz dlq_error_timestamp
+        timestamptz recovered_at
     }
 ```
 
 ## Notes
-- `DEFECTIVE_PARTS.traceability_completed_at` minus `inspection_timestamp` drives the **2-hour
-  SLA** check.
-- `PIPELINE_AUDIT` is written by `audit_log_writer` on every pipeline run.
-- `schema_version` (written by `schema_version_tagger`) appears on every part record for ISO
-  audit traceability.
-- `SUPPLIER_AUDIT.defect_correlation_score` backs the supplier quality risk score (stretch).
+
+- **2-hour SLA** is computed as `traceability_completed_at − inspection_timestamp` on
+  `DEFECTIVE_PARTS`; `qtp sla scan` escalates any part past the window with the field null.
+- **`PIPELINE_AUDIT`** is written by the `audit_log_writer` fragment; `audit_metrics` holds a
+  serialized metrics blob (record/error/critical counts) per run — one row per pipeline run.
+- **`DLQ_RECOVERY`** captures the identity of records that failed a stage and were archived to
+  the MinIO DLQ (SDC's error-record format discards per-stage metadata on re-read, so recovery
+  reconstructs `part_id`/`line_id`/source/time rather than the full failed record).
+- **`schema_version`** (from `schema_version_tagger`) is present on every part row — the ISO
+  "schema version on every record" control.
+- **`SUPPLIER_AUDIT.defect_correlation_score`** backs the "worst supplier" Grafana panel and
+  the shift report's supplier-risk section.
+- Referential integrity across the MySQL↔Postgres boundary is enforced *in the pipeline*
+  (the JDBC Lookup), not by a database FK — the ERD shows the logical relationship.
