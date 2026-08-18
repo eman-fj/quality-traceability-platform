@@ -110,7 +110,7 @@ The parts worth reading the code for:
 | *(optional)* Real Teams / Jira | Live alerting beyond the local stubs | Everything falls back to WireMock/Mailhog if absent |
 
 ```bash
-git clone <your-fork-url> && cd quality-traceability-platform
+git clone https://github.com/eman-fj/quality-traceability-platform.git && cd quality-traceability-platform
 cp .env.example .env          # then edit .env; see the Security section before going public
 pip install -e .              # installs the `qtp` CLI
 docker compose up -d          # boots the full local environment
