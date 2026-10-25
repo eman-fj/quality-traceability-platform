@@ -1,7 +1,7 @@
 # Evidence Log
 
-Capture proof as work proceeds — one row per artefact, organised by rubric category.
-Drop screenshots/files in this folder and link them here.
+One row per artefact, grouped by rubric category. Save screenshots and files in this folder
+and link them here.
 
 ## Technical Correctness
 | Date | Artefact | File | Notes |

@@ -1,10 +1,11 @@
-# QTP: Sequence Diagram: one CRITICAL defect, end to end
+# QTP: sequence diagram for one CRITICAL defect
 
-Traces a single CRITICAL part from inspection to a closed 2-hour traceability record,
-across every system it touches. This is the "golden thread" the demo and evidence pack
-reproduce deterministically.
+This diagram follows a single CRITICAL part from inspection to a closed two-hour traceability
+record, across every system it touches. The demo and the evidence pack reproduce the same path
+with fixed data.
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Segoe UI, Helvetica, Arial, sans-serif", "actorBkg": "#1e293b", "actorTextColor": "#f1f5f9", "actorBorder": "#475569", "signalColor": "#334155", "signalTextColor": "#0f172a", "noteBkgColor": "#fff7ed", "noteBorderColor": "#ea580c", "activationBkgColor": "#e0ecff", "sequenceNumberColor": "#ffffff"}}}%%
 sequenceDiagram
     autonumber
     participant SIM as Simulator
@@ -30,38 +31,38 @@ sequenceDiagram
     ENR->>WM: POST /defects/classify (whole record)
     WM-->>ENR: {defect_category: CRITICAL, recommended_action: SCRAP}
     ENR->>ENR: flatten defect_codes → defect_codes_str (JS)
-    ENR->>WM: PUT /quarantine/register (retry ×3 exp-backoff)
+    ENR->>WM: PUT /quarantine/register (3 retries, exponential backoff)
     WM-->>ENR: {quarantine_id}
     ENR->>PG: INSERT defective_parts (+ quarantine_id, traceability_completed_at)
 
-    par Severity fan-out (CRITICAL)
+    par Severity routing (CRITICAL)
         ENR->>WM: audit alert (dispatcher fragment)
-        ENR->>ENR: rollup gate - first in window? emit : count
-        ENR->>TEAMS: POST Adaptive Card (+N rolled-up if any)
+        ENR->>ENR: rollup gate: first in window? send : count
+        ENR->>TEAMS: POST Adaptive Card (+N rolled up, if any)
         ENR->>JIRA: POST /rest/api/3/issue (ADF description)
         JIRA-->>ENR: 201 Created (QUAL-####)
     end
 
     Note over PG,SLA: continuous compliance loop
-    SLA->>PG: scan defective_parts past 2h w/o completed traceability
+    SLA->>PG: scan defective_parts older than 2h without completed traceability
     alt breach risk
-        SLA->>JIRA: escalate - create SLA-breach ticket
-        SLA->>TEAMS: escalate - CRITICAL alert
+        SLA->>JIRA: escalate: create SLA breach ticket
+        SLA->>TEAMS: escalate: CRITICAL alert
     else within SLA
-        SLA-->>SLA: traceability chain complete (part → batch → supplier → certificate)
+        SLA-->>SLA: chain complete (part → batch → supplier → certificate)
     end
 ```
 
-## What each hop guarantees (ISO 9001 controls)
+## ISO 9001 controls at each step
 
-| Hop | Control | Evidence |
+| Step | Control | Evidence |
 |-----|---------|----------|
 | schema_version stamp | Schema version on every record | `defective_parts.schema_version` |
-| ERP lookup | Full traceability chain | supplier + batch + certificate columns |
-| classify | Deterministic severity → action | `defect_category`, `recommended_action` |
-| quarantine (retry ×3) | Mandatory quarantine of CRITICAL/MAJOR | `quarantine_log`, `quarantine_id` |
-| rollup gate + fan-out | Severity-routed alerting, rate-capped | Teams card · Jira ticket · WireMock journal |
-| SLA scan | 2-hour traceability SLA | `traceability_completed_at - inspection_timestamp` |
+| ERP lookup | Full traceability chain | Supplier, batch, and certificate columns |
+| Classify | Deterministic severity and action | `defect_category`, `recommended_action` |
+| Quarantine (3 retries) | Mandatory quarantine of CRITICAL and MAJOR parts | `quarantine_log`, `quarantine_id` |
+| Rollup gate and routing | Severity-routed, rate-limited alerting | Teams card · Jira ticket · WireMock journal |
+| SLA scan | Two-hour traceability SLA | `traceability_completed_at - inspection_timestamp` |
 
-Any stage failure routes the record to the MinIO **dead-letter queue** (visible, recoverable)
-rather than dropping it - so a downstream outage never silently loses a defect.
+If any stage fails, the record goes to the MinIO dead-letter queue, where it can be seen and
+recovered. A downstream outage cannot silently lose a defect.

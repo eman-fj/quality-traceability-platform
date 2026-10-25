@@ -1,16 +1,16 @@
-# QTP: Entity Relationship Diagram
+# QTP: entity relationship diagram
 
-Two databases span the traceability chain: **`erp`** (MySQL - simulated supplier/ERP system
-of record) and **`quality`** (Postgres - the quality warehouse: pipeline destinations, SLA
-state, audit). The join across the boundary is `defective_parts.material_batch_id →
-material_batches.batch_id`, resolved at runtime by the `defect_enrichment` JDBC Lookup.
+The traceability chain spans two databases. `erp` (MySQL) is the simulated supplier and ERP
+system of record. `quality` (Postgres) is the quality warehouse, holding pipeline output, SLA
+state, and audit records. The link between them is `defective_parts.material_batch_id →
+material_batches.batch_id`, which the `defect_enrichment` JDBC Lookup resolves at runtime.
 
-> Column types below are the *actual* deployed schema. Note `inspection_timestamp` is stored
-> as **TEXT** (StreamSets' JDBC Producer would not coerce the ISO-8601 string into a
-> `TIMESTAMP` column reliably, so the value is kept verbatim and cast in queries) - a real
-> engineering decision, documented rather than hidden.
+> The column types below are the deployed schema. `inspection_timestamp` is stored as TEXT
+> because the StreamSets JDBC Producer did not reliably convert the ISO-8601 string into a
+> `TIMESTAMP` column. The value is kept as received and cast in queries.
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Segoe UI, Helvetica, Arial, sans-serif", "primaryColor": "#e0ecff", "primaryBorderColor": "#2563eb", "primaryTextColor": "#0b2a5b", "lineColor": "#64748b", "attributeBackgroundColorOdd": "#ffffff", "attributeBackgroundColorEven": "#f1f5f9"}}}%%
 erDiagram
     SUPPLIERS ||--o{ MATERIAL_BATCHES : supplies
     MATERIAL_BATCHES ||--o{ DEFECTIVE_PARTS : "traced to"
@@ -103,16 +103,18 @@ erDiagram
 
 ## Notes
 
-- **2-hour SLA** is computed as `traceability_completed_at - inspection_timestamp` on
-  `DEFECTIVE_PARTS`; `qtp sla scan` escalates any part past the window with the field null.
-- **`PIPELINE_AUDIT`** is written by the `audit_log_writer` fragment; `audit_metrics` holds a
-  serialized metrics blob (record/error/critical counts) per run - one row per pipeline run.
-- **`DLQ_RECOVERY`** captures the identity of records that failed a stage and were archived to
-  the MinIO DLQ (SDC's error-record format discards per-stage metadata on re-read, so recovery
-  reconstructs `part_id`/`line_id`/source/time rather than the full failed record).
-- **`schema_version`** (from `schema_version_tagger`) is present on every part row - the ISO
-  "schema version on every record" control.
-- **`SUPPLIER_AUDIT.defect_correlation_score`** backs the "worst supplier" Grafana panel and
-  the shift report's supplier-risk section.
-- Referential integrity across the MySQL↔Postgres boundary is enforced *in the pipeline*
-  (the JDBC Lookup), not by a database FK - the ERD shows the logical relationship.
+- The **two-hour SLA** is `traceability_completed_at - inspection_timestamp` on
+  `DEFECTIVE_PARTS`. `qtp sla scan` escalates any part past the window whose
+  `traceability_completed_at` is still null.
+- **`PIPELINE_AUDIT`** is written by the `audit_log_writer` fragment, one row per pipeline run.
+  `audit_metrics` holds the serialized record, error, and critical counts for that run.
+- **`DLQ_RECOVERY`** records which records failed a stage and were archived to the MinIO
+  dead-letter queue. The Data Collector error-record format drops per-stage metadata when it is
+  read back, so recovery rebuilds `part_id`, `line_id`, the source, and the time rather than the
+  full failed record.
+- **`schema_version`**, set by `schema_version_tagger`, is on every part row. This is the ISO
+  control that requires a schema version on every record.
+- **`SUPPLIER_AUDIT.defect_correlation_score`** drives the "worst supplier" Grafana panel and the
+  supplier risk section of the shift report.
+- No database foreign key crosses the MySQL and Postgres boundary. The pipeline enforces the
+  relationship through the JDBC Lookup, and the ERD shows it as a logical link.

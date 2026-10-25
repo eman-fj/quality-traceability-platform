@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title>Quality &amp; Traceability Platform: architecture overview</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1424"/>
+      <stop offset="1" stop-color="#111c33"/>
+    </linearGradient>
+    <linearGradient id="ss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16294a"/>
+      <stop offset="1" stop-color="#122240"/>
+    </linearGradient>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#38bdf8"/></marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f87171"/></marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#fb923c"/></marker>
+    <style>
+      .h1{font-size:34px;font-weight:700;fill:#f8fafc}
+      .sub{font-size:16px;fill:#94a3b8}
+      .sec{font-size:13px;font-weight:700;letter-spacing:1.6px;fill:#94a3b8}
+      .card{fill:#17223a;stroke:#2c3b5a;stroke-width:1.5}
+      .stage{fill:#1d3561;stroke:#38bdf8;stroke-width:1.5}
+      .gate{fill:#3a2414;stroke:#fb923c;stroke-width:1.5}
+      .crit{fill:#3b1820;stroke:#f87171;stroke-width:1.5}
+      .store{fill:#13301f;stroke:#4ade80;stroke-width:1.5}
+      .ops{fill:#2e2810;stroke:#facc15;stroke-width:1.5}
+      .t{font-size:16px;font-weight:600;fill:#f1f5f9}
+      .s{font-size:12.5px;fill:#a5b4cb}
+      .lbl{font-size:12px;font-weight:600}
+      .ln{fill:none;stroke:#94a3b8;stroke-width:2;marker-end:url(#a)}
+      .lb{fill:none;stroke:#38bdf8;stroke-width:2.5;marker-end:url(#ab)}
+      .lr{fill:none;stroke:#f87171;stroke-width:2.5;marker-end:url(#ar)}
+      .lo{fill:none;stroke:#fb923c;stroke-width:2;marker-end:url(#ao)}
+      .dash{fill:none;stroke:#64748b;stroke-width:1.6;stroke-dasharray:6 5;marker-end:url(#a)}
+      .chip{fill:#0f2a1c;stroke:#22c55e;stroke-width:1.2}
+      .chipt{font-size:14px;font-weight:700;fill:#86efac}
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+
+  <!-- Title -->
+  <text x="48" y="66" class="h1">Quality &amp; Traceability Platform</text>
+  <text x="48" y="96" class="sub">Real-time defect detection and supplier traceability, built entirely with the StreamSets Control Hub Python SDK</text>
+
+  <!-- KPI chips -->
+  <rect x="1088" y="40" width="148" height="38" rx="19" class="chip"/>
+  <text x="1162" y="65" class="chipt" text-anchor="middle">Trace &lt; 2 hours</text>
+  <rect x="1248" y="40" width="148" height="38" rx="19" class="chip"/>
+  <text x="1322" y="65" class="chipt" text-anchor="middle">ISO 9001: 5/5</text>
+  <rect x="1408" y="40" width="148" height="38" rx="19" class="chip"/>
+  <text x="1482" y="65" class="chipt" text-anchor="middle">0 secrets in JSON</text>
+
+  <!-- ===== Column 1: factory ===== -->
+  <text x="48" y="150" class="sec">FACTORY FLOOR</text>
+  <rect x="48" y="166" width="230" height="86" rx="12" class="card"/>
+  <text x="68" y="198" class="t">Inspection stations</text>
+  <text x="68" y="220" class="s">3 production lines</text>
+  <text x="68" y="238" class="s">~3 events/s · CRITICAL on a timer</text>
+
+  <rect x="48" y="290" width="230" height="70" rx="12" class="card"/>
+  <text x="68" y="320" class="t">Kafka</text>
+  <text x="68" y="342" class="s">quality.inspections</text>
+  <path d="M163,252 L163,286" class="ln"/>
+
+  <rect x="48" y="452" width="230" height="70" rx="12" class="card"/>
+  <text x="68" y="482" class="t">Kafka</text>
+  <text x="68" y="504" class="s">quality.defects.major</text>
+
+  <!-- ===== StreamSets panel ===== -->
+  <rect x="320" y="128" width="800" height="472" rx="18" fill="url(#ss)" stroke="#38bdf8" stroke-opacity="0.45" stroke-width="1.5"/>
+  <text x="344" y="160" class="sec" style="fill:#7dd3fc">IBM STREAMSETS CONTROL HUB · PIPELINES PUBLISHED FROM PYTHON</text>
+
+  <!-- Pipeline A -->
+  <text x="344" y="196" class="lbl" style="fill:#cbd5e1">Pipeline A · quality_ingest</text>
+  <rect x="344" y="210" width="230" height="96" rx="12" class="stage"/>
+  <text x="362" y="240" class="t">Enrich and tag</text>
+  <text x="362" y="262" class="s">Kafka headers · data quality</text>
+  <text x="362" y="280" class="s">schema_version on every record</text>
+  <text x="362" y="296" class="s" style="fill:#7dd3fc">shared fragments, tag-pinned</text>
+
+  <rect x="610" y="210" width="190" height="96" rx="12" class="gate"/>
+  <text x="628" y="240" class="t">Stream Selector</text>
+  <text x="628" y="262" class="s">defect_codes present?</text>
+  <text x="628" y="280" class="s">clean or defect lane</text>
+
+  <rect x="836" y="210" width="260" height="96" rx="12" class="stage"/>
+  <text x="854" y="240" class="t">Clean parts</text>
+  <text x="854" y="262" class="s">Field Remover → JDBC Producer</text>
+  <text x="854" y="280" class="s">+ Parquet archive to MinIO</text>
+
+  <path d="M278,325 L300,325 L300,258 L340,258" class="lb"/>
+  <path d="M574,258 L606,258" class="lb"/>
+  <path d="M800,258 L832,258" class="lb"/>
+  <path d="M705,306 L705,330 L300,330 L300,487 L282,487" class="lr"/>
+  <text x="712" y="324" class="lbl" style="fill:#fca5a5">defect</text>
+
+  <!-- Pipeline B -->
+  <text x="344" y="372" class="lbl" style="fill:#cbd5e1">Pipeline B · defect_enrichment</text>
+  <rect x="344" y="386" width="230" height="116" rx="12" class="crit"/>
+  <text x="362" y="416" class="t">Trace and classify</text>
+  <text x="362" y="438" class="s">JDBC Lookup: batch → supplier</text>
+  <text x="362" y="456" class="s">grade · certificate URL</text>
+  <text x="362" y="474" class="s">HTTP classify → severity, action</text>
+  <text x="362" y="492" class="s">retry + dead-letter queue</text>
+
+  <rect x="610" y="386" width="190" height="116" rx="12" class="crit"/>
+  <text x="628" y="416" class="t">Quarantine</text>
+  <text x="628" y="438" class="s">mandatory for every</text>
+  <text x="628" y="456" class="s">CRITICAL and MAJOR part</text>
+  <text x="628" y="474" class="s">3 retries, exp. backoff</text>
+
+  <rect x="836" y="386" width="260" height="116" rx="12" class="gate"/>
+  <text x="854" y="416" class="t">Severity routing</text>
+  <text x="854" y="438" class="s">Stream Selector by severity</text>
+  <text x="854" y="456" class="s">Rollup gate (stateful JS):</text>
+  <text x="854" y="474" class="s">1 alert / line / 5 min</text>
+  <text x="854" y="492" class="s">"+N more since last alert"</text>
+
+  <path d="M278,487 L300,487 L300,444 L340,444" class="lr"/>
+  <path d="M574,444 L606,444" class="lr"/>
+  <path d="M800,444 L832,444" class="lr"/>
+
+  <text x="344" y="540" class="s" style="fill:#94a3b8">Named connections · secrets injected as job runtime parameters · per-line pipelines generated from lines.yaml</text>
+  <text x="344" y="562" class="s" style="fill:#94a3b8">qtp pipelines add-line → a new production line with one command</text>
+
+  <!-- ===== Right column: alerts ===== -->
+  <text x="1160" y="150" class="sec">ALERTS BY SEVERITY</text>
+  <rect x="1160" y="166" width="392" height="80" rx="12" class="crit"/>
+  <text x="1180" y="196" class="t">CRITICAL</text>
+  <text x="1180" y="220" class="s">Microsoft Teams Adaptive Card + Jira ticket</text>
+
+  <rect x="1160" y="262" width="392" height="80" rx="12" class="gate"/>
+  <text x="1180" y="292" class="t">MAJOR</text>
+  <text x="1180" y="316" class="s">Microsoft Teams Adaptive Card</text>
+
+  <rect x="1160" y="358" width="392" height="80" rx="12" class="card"/>
+  <text x="1180" y="388" class="t">MINOR</text>
+  <text x="1180" y="412" class="s">Email through the engine SMTP relay</text>
+
+  <rect x="1160" y="454" width="392" height="80" rx="12" class="card"/>
+  <text x="1180" y="484" class="t">Audit journal</text>
+  <text x="1180" y="508" class="s">every alert recorded · feeds qtp_alerts_fired_total</text>
+
+  <path d="M1096,420 L1128,420 L1128,206 L1156,206" class="lo"/>
+  <path d="M1128,302 L1156,302" class="lo"/>
+  <path d="M1128,398 L1156,398" class="lo"/>
+  <path d="M1096,480 L1128,480 L1128,494 L1156,494" class="lo"/>
+
+  <!-- ===== Bottom: data + control plane ===== -->
+  <text x="48" y="644" class="sec">DATA</text>
+  <rect x="48" y="660" width="230" height="96" rx="12" class="store"/>
+  <text x="68" y="690" class="t">MySQL ERP</text>
+  <text x="68" y="712" class="s">suppliers</text>
+  <text x="68" y="730" class="s">material_batches</text>
+
+  <rect x="300" y="660" width="290" height="96" rx="12" class="store"/>
+  <text x="320" y="690" class="t">Postgres quality warehouse</text>
+  <text x="320" y="712" class="s">conforming / defective parts</text>
+  <text x="320" y="730" class="s">quarantine · audit · SLA state</text>
+
+  <rect x="612" y="660" width="230" height="96" rx="12" class="store"/>
+  <text x="632" y="690" class="t">MinIO (TLS)</text>
+  <text x="632" y="712" class="s">Parquet archive · reports</text>
+  <text x="632" y="730" class="s">dead-letter queue</text>
+
+  <text x="880" y="644" class="sec">SDK CONTROL PLANE · qtp CLI</text>
+  <rect x="880" y="660" width="216" height="96" rx="12" class="ops"/>
+  <text x="898" y="690" class="t">Compliance checks</text>
+  <text x="898" y="712" class="s">2-hour SLA scan</text>
+  <text x="898" y="730" class="s">defect rate &gt; 2% per line</text>
+
+  <rect x="1116" y="660" width="210" height="96" rx="12" class="ops"/>
+  <text x="1134" y="690" class="t">Observability</text>
+  <text x="1134" y="712" class="s">job metrics via SDK</text>
+  <text x="1134" y="730" class="s">Prometheus → Grafana</text>
+
+  <rect x="1346" y="660" width="206" height="96" rx="12" class="ops"/>
+  <text x="1364" y="690" class="t">Evidence</text>
+  <text x="1364" y="712" class="s">shift Excel report</text>
+  <text x="1364" y="730" class="s">ISO 9001 audit pack</text>
+
+  <!-- data links -->
+  <path d="M163,656 L163,590 L316,590 L316,480 L340,480" class="dash"/>
+  <text x="172" y="612" class="lbl" style="fill:#94a3b8">ERP lookup</text>
+  <path d="M1096,280 L1110,280 L1110,616 L445,616 L445,656" class="ln"/>
+  <path d="M705,502 L705,610 L540,610 L540,656" class="ln"/>
+  <path d="M590,708 L608,708" class="dash"/>
+  <path d="M445,756 L445,790 L988,790 L988,760" class="ln"/>
+  <path d="M1060,656 L1060,638 L1356,638 L1356,538" class="lo"/>
+  <text x="1150" y="630" class="lbl" style="fill:#fdba74">SLA breach → escalate</text>
+
+  <!-- footer -->
+  <text x="48" y="850" class="s" style="fill:#64748b">Runs locally with Docker Compose: Kafka · Postgres · MySQL · MinIO · WireMock · Mailhog · Prometheus · Grafana</text>
+  <text x="1552" y="850" class="s" style="fill:#64748b" text-anchor="end">qtp demo run: one command, eight stages, five controls</text>
+</svg>
