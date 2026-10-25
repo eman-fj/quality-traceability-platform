@@ -99,8 +99,13 @@ at runtime, alerts are routed by severity, and the ISO 9001 checks run on a sche
 | Teams and Jira (optional) | Real alerts instead of local stubs | Falls back to WireMock and Mailhog when unset |
 
 ```bash
+<<<<<<< HEAD
 git clone <your-fork-url> && cd quality-traceability-platform
 cp .env.example .env          # then edit .env; read the Security section before going public
+=======
+git clone https://github.com/eman-fj/quality-traceability-platform.git && cd quality-traceability-platform
+cp .env.example .env          # then edit .env; see the Security section before going public
+>>>>>>> 451e4ed9c1bb65c73246f965f3e4aef6fb0b6eef
 pip install -e .              # installs the `qtp` CLI
 docker compose up -d          # starts the local environment
 ```
