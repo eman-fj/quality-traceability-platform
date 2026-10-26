@@ -123,9 +123,12 @@ services:
 
   # ---------------------------------------------------------------- MinIO (object storage)
   minio:
-    image: minio/minio
+    # The official minio/minio image is no longer published on Docker Hub; Chainguard's
+    # build is the same MinIO server and stays freely pullable.
+    image: cgr.dev/chainguard/minio:latest
     container_name: qtp-minio
-    command: server /data --console-address ":9001"
+    user: "0"
+    command: server /data --console-address ":9001" --certs-dir /root/.minio/certs
     ports:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
@@ -140,7 +143,8 @@ services:
       # cert once (see README / setup docs). Cert SANs include 'minio'.
       - ./certs:/root/.minio/certs:ro
     healthcheck:
-      test: ["CMD", "curl", "-fk", "https://localhost:9000/minio/health/live"]
+      # The image has no curl, so check that the API port is accepting connections.
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/9000"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -148,12 +152,14 @@ services:
 
   # Creates the four quality buckets, then exits.
   minio-init:
-    image: minio/mc
+    # Same image as the server: it ships the mc client and a shell.
+    image: cgr.dev/chainguard/minio:latest
     container_name: qtp-minio-init
+    user: "0"
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: ["sh", "-c"]
+    entrypoint: ["bash", "-c"]
     command:
       - |
         mc alias set --insecure local https://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
